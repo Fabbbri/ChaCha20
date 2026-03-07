@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Build script for C+assembly example
-echo "Building C+assembly example..."
+# Build script for ChaCha20 RISC-V implementation
+echo "Building ChaCha20 project..."
 
 # Compile C source to object file
 riscv64-unknown-elf-gcc \
@@ -12,8 +12,8 @@ riscv64-unknown-elf-gcc \
     -g3 \
     -gdwarf-4 \
     -c \
-    example.c \
-    -o example.o
+    main.c \
+    -o main.o
 
 if [ $? -ne 0 ]; then
     echo "C compilation failed"
@@ -37,7 +37,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Compile math assembly source to object file
+# Compile ChaCha20 assembly source to object file
 riscv64-unknown-elf-gcc \
     -march=rv32im \
     -mabi=ilp32 \
@@ -46,11 +46,11 @@ riscv64-unknown-elf-gcc \
     -g3 \
     -gdwarf-4 \
     -c \
-    math_asm.s \
-    -o math_asm.o
+    chacha20.s \
+    -o chacha20.o
 
 if [ $? -ne 0 ]; then
-    echo "Math assembly compilation failed"
+    echo "ChaCha20 assembly compilation failed"
     exit 1
 fi
 
@@ -63,14 +63,13 @@ riscv64-unknown-elf-gcc \
     -g3 \
     -gdwarf-4 \
     startup.o \
-    example.o \
-    math_asm.o \
+    main.o \
+    chacha20.o \
     -T linker.ld \
-    -o example.elf
+    -o chacha20.elf
 
 if [ $? -eq 0 ]; then
-    echo "Build successful: example.elf created"
-    echo "Object files: example.o, math_asm.o"
+    echo "Build successful: chacha20.elf created"
 else
     echo "Linking failed"
     exit 1
