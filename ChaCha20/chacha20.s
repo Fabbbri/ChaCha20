@@ -230,8 +230,140 @@ chacha20_block:
     # Próximo paso: Copiar a initial_state (sp+64 a sp+127)
     # =========================================================================
 
-    # TODO: Paso 2 - Copiar estado inicial
-    # TODO: Paso 3 - Ejecutar 20 rondas
+    # =========================================================================
+    # PASO 2: Copiar estado inicial
+    # =========================================================================
+    # Copiamos working_state (sp+0..63) a initial_state (sp+64..127)
+    # Esto es necesario porque después de las 20 rondas, el algoritmo
+    # requiere sumar el estado inicial al resultado final:
+    #   final_state = working_state + initial_state
+    #
+    # Usamos un bucle para copiar las 16 palabras (64 bytes)
+    # =========================================================================
+    
+    li      t1, 0               # t1 = índice (0, 4, 8, ... 60)
+.Lcopy_initial_state:
+    add     t2, sp, t1          # t2 = dirección de working_state[i]
+    lw      t0, 0(t2)           # t0 = working_state[i]
+    addi    t2, t2, 64          # t2 = dirección de initial_state[i] (sp+64+i)
+    sw      t0, 0(t2)           # initial_state[i] = working_state[i]
+    addi    t1, t1, 4           # i += 4 (siguiente palabra de 32 bits)
+    li      t3, 64              # límite: 64 bytes
+    blt     t1, t3, .Lcopy_initial_state  # si i < 64, continuar
+
+    # =========================================================================
+    # FIN PASO 2 - Estado inicial copiado en sp+64 a sp+127
+    # =========================================================================
+
+    # =========================================================================
+    # PASO 3: Ejecutar 20 rondas (10 iteraciones de inner_block)
+    # =========================================================================
+    # Según RFC 8439 Section 2.3.1, inner_block ejecuta 8 quarter rounds:
+    #
+    #   Column rounds (operan en columnas de la matriz 4x4):
+    #     QUARTERROUND(0, 4,  8, 12)  - columna 0
+    #     QUARTERROUND(1, 5,  9, 13)  - columna 1
+    #     QUARTERROUND(2, 6, 10, 14)  - columna 2
+    #     QUARTERROUND(3, 7, 11, 15)  - columna 3
+    #
+    #   Diagonal rounds (operan en diagonales):
+    #     QUARTERROUND(0, 5, 10, 15)  - diagonal principal
+    #     QUARTERROUND(1, 6, 11, 12)  - diagonal +1
+    #     QUARTERROUND(2, 7,  8, 13)  - diagonal +2
+    #     QUARTERROUND(3, 4,  9, 14)  - diagonal +3
+    #
+    # La matriz 4x4 del estado:
+    #    0  1  2  3
+    #    4  5  6  7
+    #    8  9 10 11
+    #   12 13 14 15
+    # =========================================================================
+    
+    li      s4, 10              # s4 = contador de iteraciones (10 veces)
+
+.Linner_block_loop:
+    # =====================================================================
+    # Column Rounds - operan en columnas verticales
+    # =====================================================================
+    
+    # QUARTERROUND(0, 4, 8, 12) - columna 0
+    mv      a0, sp              # a0 = puntero al estado (working_state)
+    li      a1, 0               # índice a = 0
+    li      a2, 4               # índice b = 4
+    li      a3, 8               # índice c = 8
+    li      a4, 12              # índice d = 12
+    call    chacha20_quarter_round
+
+    # QUARTERROUND(1, 5, 9, 13) - columna 1
+    mv      a0, sp
+    li      a1, 1
+    li      a2, 5
+    li      a3, 9
+    li      a4, 13
+    call    chacha20_quarter_round
+
+    # QUARTERROUND(2, 6, 10, 14) - columna 2
+    mv      a0, sp
+    li      a1, 2
+    li      a2, 6
+    li      a3, 10
+    li      a4, 14
+    call    chacha20_quarter_round
+
+    # QUARTERROUND(3, 7, 11, 15) - columna 3
+    mv      a0, sp
+    li      a1, 3
+    li      a2, 7
+    li      a3, 11
+    li      a4, 15
+    call    chacha20_quarter_round
+
+    # =====================================================================
+    # Diagonal Rounds - operan en diagonales
+    # =====================================================================
+    
+    # QUARTERROUND(0, 5, 10, 15) - diagonal principal
+    mv      a0, sp
+    li      a1, 0
+    li      a2, 5
+    li      a3, 10
+    li      a4, 15
+    call    chacha20_quarter_round
+
+    # QUARTERROUND(1, 6, 11, 12) - diagonal +1
+    mv      a0, sp
+    li      a1, 1
+    li      a2, 6
+    li      a3, 11
+    li      a4, 12
+    call    chacha20_quarter_round
+
+    # QUARTERROUND(2, 7, 8, 13) - diagonal +2
+    mv      a0, sp
+    li      a1, 2
+    li      a2, 7
+    li      a3, 8
+    li      a4, 13
+    call    chacha20_quarter_round
+
+    # QUARTERROUND(3, 4, 9, 14) - diagonal +3
+    mv      a0, sp
+    li      a1, 3
+    li      a2, 4
+    li      a3, 9
+    li      a4, 14
+    call    chacha20_quarter_round
+
+    # =====================================================================
+    # Decrementar contador y repetir si no hemos terminado
+    # =====================================================================
+    addi    s4, s4, -1          # s4 -= 1
+    bnez    s4, .Linner_block_loop  # si s4 != 0, repetir
+
+    # =========================================================================
+    # FIN PASO 3 - Se ejecutaron 20 rondas (10 × 8 quarter rounds)
+    # =========================================================================
+
     # TODO: Paso 4 - Sumar estado inicial
     # TODO: Paso 5 - Serializar salida
 
