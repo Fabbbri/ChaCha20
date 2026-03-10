@@ -125,19 +125,28 @@ chacha20_quarter_round:
     ret
 
 # =============================================================================
-# chacha20_block - PASO 1: Inicialización del estado
+# chacha20_block - RFC 8439 Section 2.3.1
 # =============================================================================
-# Genera un bloque de 64 bytes de keystream según RFC 8439 Section 2.3.1
+# Genera un bloque de 64 bytes de keystream
+#
+# Pseudocode:
+#   chacha20_block(key, counter, nonce):
+#       state = constants | key | counter | nonce
+#       working_state = state
+#       for i = 1 upto 10:
+#           inner_block(working_state)
+#       working_state += state
+#       return serialize(working_state)
 #
 # Parámetros:
-#   a0 = puntero a la clave (32 bytes)
-#   a1 = contador de bloque (32 bits)
-#   a2 = puntero al nonce (12 bytes)
-#   a3 = puntero al buffer de salida (64 bytes)
+#   a0 = puntero a key (32 bytes)
+#   a1 = counter (32 bits)
+#   a2 = puntero a nonce (12 bytes)
+#   a3 = puntero a buffer de salida (64 bytes)
 #
-# Layout del estado en memoria (stack):
-#   sp+0  a sp+63:  working_state (16 x uint32)
-#   sp+64 a sp+127: initial_state (copia para sumar al final)
+# Layout en memoria (stack):
+#   sp+0  a sp+63:  working_state (se modifica con inner_block)
+#   sp+64 a sp+127: state (original, se preserva para sumar)
 # =============================================================================
 .globl chacha20_block
 chacha20_block:
@@ -165,8 +174,8 @@ chacha20_block:
     mv      s3, a3              # s3 = puntero al buffer de salida (64 bytes)
 
     # =========================================================================
-    # PASO 1A: Cargar constantes en state[0..3]
-    # Estas son las constantes "expand 32-byte k" en little-endian
+    # PASO 1A: state = constants | key | counter | nonce
+    # Primero cargamos las constantes "expand 32-byte k" en little-endian
     # =========================================================================
     li      t0, 0x61707865      # "expa" -> state[0]
     sw      t0, 0(sp)
@@ -226,39 +235,38 @@ chacha20_block:
     sw      t0, 60(sp)
 
     # =========================================================================
-    # FIN PASO 1 - El estado está inicializado en sp+0 a sp+63
-    # Próximo paso: Copiar a initial_state (sp+64 a sp+127)
+    # FIN PASO 1: state = constants | key | counter | nonce
+    # El state está construido en sp+0..63 (temporalmente)
     # =========================================================================
 
     # =========================================================================
-    # PASO 2: Copiar estado inicial
+    # PASO 2: working_state = state
     # =========================================================================
-    # Copiamos working_state (sp+0..63) a initial_state (sp+64..127)
-    # Esto es necesario porque después de las 20 rondas, el algoritmo
-    # requiere sumar el estado inicial al resultado final:
-    #   final_state = working_state + initial_state
+    # Copiamos sp+0..63 → sp+64..127, luego intercambiamos roles:
+    #   - sp+64..127 = state (preservamos el original)
+    #   - sp+0..63   = working_state (se modificará con inner_block)
     #
     # Usamos un bucle para copiar las 16 palabras (64 bytes)
     # =========================================================================
     
-    li      t1, 0               # t1 = índice (0, 4, 8, ... 60)
-.Lcopy_initial_state:
-    add     t2, sp, t1          # t2 = dirección de working_state[i]
-    lw      t0, 0(t2)           # t0 = working_state[i]
-    addi    t2, t2, 64          # t2 = dirección de initial_state[i] (sp+64+i)
-    sw      t0, 0(t2)           # initial_state[i] = working_state[i]
-    addi    t1, t1, 4           # i += 4 (siguiente palabra de 32 bits)
+    li      t1, 0               # t1 = offset en bytes (0, 4, 8, ... 60)
+.Lcopy_state:
+    add     t2, sp, t1          # t2 = &sp[offset]
+    lw      t0, 0(t2)           # t0 = valor en sp+offset
+    sw      t0, 64(t2)          # copiar a sp+64+offset (state)
+    addi    t1, t1, 4           # offset += 4
     li      t3, 64              # límite: 64 bytes
-    blt     t1, t3, .Lcopy_initial_state  # si i < 64, continuar
+    blt     t1, t3, .Lcopy_state
 
     # =========================================================================
-    # FIN PASO 2 - Estado inicial copiado en sp+64 a sp+127
+    # FIN PASO 2: working_state = state
+    # Ahora: sp+0..63 = working_state, sp+64..127 = state (original)
     # =========================================================================
 
     # =========================================================================
-    # PASO 3: Ejecutar 20 rondas (10 iteraciones de inner_block)
+    # PASO 3: for i = 1 upto 10: inner_block(working_state)
     # =========================================================================
-    # Según RFC 8439 Section 2.3.1, inner_block ejecuta 8 quarter rounds:
+    # inner_block ejecuta 8 quarter rounds por iteración (RFC 8439):
     #
     #   Column rounds (operan en columnas de la matriz 4x4):
     #     QUARTERROUND(0, 4,  8, 12)  - columna 0
@@ -361,11 +369,11 @@ chacha20_block:
     bnez    s4, .Linner_block_loop  # si s4 != 0, repetir
 
     # =========================================================================
-    # FIN PASO 3 - Se ejecutaron 20 rondas (10 × 8 quarter rounds)
+    # FIN PASO 3: inner_block ejecutado 10 veces sobre working_state
     # =========================================================================
 
-    # TODO: Paso 4 - Sumar estado inicial
-    # TODO: Paso 5 - Serializar salida
+    # TODO: Paso 4 - working_state += state
+    # TODO: Paso 5 - return serialize(working_state)
 
     # Epílogo temporal
     lw      s4, 152(sp)
