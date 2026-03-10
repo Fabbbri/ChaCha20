@@ -52,13 +52,24 @@ void test_quarter_round(void) {
     print_string("\n=== TEST: Quarter Round (RFC 8439 2.1.1) ===\n");
     
     // Usamos un array de 16 palabras (estado ChaCha20)
-    // Colocamos los valores de prueba en posiciones 0, 1, 2, 3
-    uint32_t state[16] = {0};
-    
-    state[0] = 0x11111111;  // a
-    state[1] = 0x01020304;  // b
-    state[2] = 0x9b8d6f43;  // c
-    state[3] = 0x01234567;  // d
+    // Inicialización manual para evitar memset/memcpy en bare-metal
+    uint32_t state[16];
+    state[0] = 0x11111111;   // a
+    state[1] = 0x01020304;   // b
+    state[2] = 0x9b8d6f43;   // c
+    state[3] = 0x01234567;   // d
+    state[4] = 0;
+    state[5] = 0;
+    state[6] = 0;
+    state[7] = 0;
+    state[8] = 0;
+    state[9] = 0;
+    state[10] = 0;
+    state[11] = 0;
+    state[12] = 0;
+    state[13] = 0;
+    state[14] = 0;
+    state[15] = 0;
     
     print_string("Input:\n");
     print_string("  a = 0x"); print_hex_word(state[0]); print_char('\n');

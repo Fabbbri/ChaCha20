@@ -1,7 +1,7 @@
 .section .text
 
 # =============================================================================
-# chacha20_quarter_round
+# chacha20_quarter_round (LEAF FUNCTION - optimizada sin prólogo/epílogo)
 # =============================================================================
 # Aplica una operación quarter round in-place sobre el array de estado
 #
@@ -17,111 +17,190 @@
 #   c += d; b ^= c; b <<<= 12;
 #   a += b; d ^= a; d <<<= 8;
 #   c += d; b ^= c; b <<<= 7;
+#
+# Registros utilizados (todos caller-saved, no requiere guardar/restaurar):
+#   a0     = puntero base (preservado para stores finales)
+#   a1-a4  = offsets calculados
+#   t2-t5  = valores a, b, c, d
+#   t0, t1 = temporales para rotaciones
 # =============================================================================
 .globl chacha20_quarter_round
 chacha20_quarter_round:
     # =========================================================================
-    # Prólogo: Guardar registros callee-saved
-    # =========================================================================
-    addi    sp, sp, -24
-    sw      ra, 20(sp)
-    sw      s0, 16(sp)
-    sw      s1, 12(sp)
-    sw      s2, 8(sp)
-    sw      s3, 4(sp)
-    sw      s4, 0(sp)
-
-    # =========================================================================
-    # Guardar puntero base y calcular offsets
-    # =========================================================================
-    mv      s0, a0              # s0 = puntero al estado
-    
     # Calcular offsets en bytes (índice * 4)
+    # =========================================================================
     slli    a1, a1, 2           # offset_a = a1 * 4
     slli    a2, a2, 2           # offset_b = a2 * 4
     slli    a3, a3, 2           # offset_c = a3 * 4
     slli    a4, a4, 2           # offset_d = a4 * 4
 
     # =========================================================================
-    # Cargar las 4 palabras del estado en registros
+    # Cargar las 4 palabras del estado en registros temporales
     # =========================================================================
-    add     t0, s0, a1
-    lw      s1, 0(t0)           # s1 = state[a]
+    add     t0, a0, a1
+    lw      t2, 0(t0)           # t2 = state[a]
     
-    add     t0, s0, a2
-    lw      s2, 0(t0)           # s2 = state[b]
+    add     t0, a0, a2
+    lw      t3, 0(t0)           # t3 = state[b]
     
-    add     t0, s0, a3
-    lw      s3, 0(t0)           # s3 = state[c]
+    add     t0, a0, a3
+    lw      t4, 0(t0)           # t4 = state[c]
     
-    add     t0, s0, a4
-    lw      s4, 0(t0)           # s4 = state[d]
+    add     t0, a0, a4
+    lw      t5, 0(t0)           # t5 = state[d]
 
     # =========================================================================
     # Quarter Round - Línea 1: a += b; d ^= a; d <<<= 16
     # =========================================================================
-    add     s1, s1, s2          # a += b
-    xor     s4, s4, s1          # d ^= a
+    add     t2, t2, t3          # a += b
+    xor     t5, t5, t2          # d ^= a
     # d <<<= 16 (rotate left 16 bits)
-    slli    t0, s4, 16          # t0 = d << 16
-    srli    t1, s4, 16          # t1 = d >> 16
-    or      s4, t0, t1          # d = (d << 16) | (d >> 16)
+    slli    t0, t5, 16          # t0 = d << 16
+    srli    t1, t5, 16          # t1 = d >> 16
+    or      t5, t0, t1          # d = (d << 16) | (d >> 16)
 
     # =========================================================================
     # Quarter Round - Línea 2: c += d; b ^= c; b <<<= 12
     # =========================================================================
-    add     s3, s3, s4          # c += d
-    xor     s2, s2, s3          # b ^= c
+    add     t4, t4, t5          # c += d
+    xor     t3, t3, t4          # b ^= c
     # b <<<= 12 (rotate left 12 bits)
-    slli    t0, s2, 12          # t0 = b << 12
-    srli    t1, s2, 20          # t1 = b >> 20
-    or      s2, t0, t1          # b = (b << 12) | (b >> 20)
+    slli    t0, t3, 12          # t0 = b << 12
+    srli    t1, t3, 20          # t1 = b >> 20
+    or      t3, t0, t1          # b = (b << 12) | (b >> 20)
 
     # =========================================================================
     # Quarter Round - Línea 3: a += b; d ^= a; d <<<= 8
     # =========================================================================
-    add     s1, s1, s2          # a += b
-    xor     s4, s4, s1          # d ^= a
+    add     t2, t2, t3          # a += b
+    xor     t5, t5, t2          # d ^= a
     # d <<<= 8 (rotate left 8 bits)
-    slli    t0, s4, 8           # t0 = d << 8
-    srli    t1, s4, 24          # t1 = d >> 24
-    or      s4, t0, t1          # d = (d << 8) | (d >> 24)
+    slli    t0, t5, 8           # t0 = d << 8
+    srli    t1, t5, 24          # t1 = d >> 24
+    or      t5, t0, t1          # d = (d << 8) | (d >> 24)
 
     # =========================================================================
     # Quarter Round - Línea 4: c += d; b ^= c; b <<<= 7
     # =========================================================================
-    add     s3, s3, s4          # c += d
-    xor     s2, s2, s3          # b ^= c
+    add     t4, t4, t5          # c += d
+    xor     t3, t3, t4          # b ^= c
     # b <<<= 7 (rotate left 7 bits)
-    slli    t0, s2, 7           # t0 = b << 7
-    srli    t1, s2, 25          # t1 = b >> 25
-    or      s2, t0, t1          # b = (b << 7) | (b >> 25)
+    slli    t0, t3, 7           # t0 = b << 7
+    srli    t1, t3, 25          # t1 = b >> 25
+    or      t3, t0, t1          # b = (b << 7) | (b >> 25)
 
     # =========================================================================
     # Guardar resultados de vuelta al estado
     # =========================================================================
-    add     t0, s0, a1
-    sw      s1, 0(t0)           # state[a] = s1
+    add     t0, a0, a1
+    sw      t2, 0(t0)           # state[a] = t2
     
-    add     t0, s0, a2
-    sw      s2, 0(t0)           # state[b] = s2
+    add     t0, a0, a2
+    sw      t3, 0(t0)           # state[b] = t3
     
-    add     t0, s0, a3
-    sw      s3, 0(t0)           # state[c] = s3
+    add     t0, a0, a3
+    sw      t4, 0(t0)           # state[c] = t4
     
-    add     t0, s0, a4
-    sw      s4, 0(t0)           # state[d] = s4
+    add     t0, a0, a4
+    sw      t5, 0(t0)           # state[d] = t5
 
-    # =========================================================================
-    # Epílogo: Restaurar registros y retornar
-    # =========================================================================
-    lw      s4, 0(sp)
-    lw      s3, 4(sp)
-    lw      s2, 8(sp)
-    lw      s1, 12(sp)
-    lw      s0, 16(sp)
-    lw      ra, 20(sp)
-    addi    sp, sp, 24
+    ret
+
+# =============================================================================
+# chacha20_inner_block - Executa 8 quarter rounds (1 double round)
+# =============================================================================
+# Aplica las operaciones column rounds + diagonal rounds sobre el estado
+#
+# Parámetro:
+#   a0 = puntero al array de estado (16 x uint32_t)
+#
+# RFC 8439 Section 2.3:
+#   Column rounds:   QR(0,4,8,12)  QR(1,5,9,13)  QR(2,6,10,14) QR(3,7,11,15)
+#   Diagonal rounds: QR(0,5,10,15) QR(1,6,11,12) QR(2,7,8,13)  QR(3,4,9,14)
+# =============================================================================
+.globl chacha20_inner_block
+chacha20_inner_block:
+    # Prólogo: guardar ra y s0 (llamamos a quarter_round)
+    addi    sp, sp, -8
+    sw      ra, 4(sp)
+    sw      s0, 0(sp)
+    
+    mv      s0, a0              # s0 = puntero al estado (preservar)
+
+    # =====================================================================
+    # Column Rounds
+    # =====================================================================
+    # QUARTERROUND(0, 4, 8, 12)
+    mv      a0, s0
+    li      a1, 0
+    li      a2, 4
+    li      a3, 8
+    li      a4, 12
+    call    chacha20_quarter_round
+
+    # QUARTERROUND(1, 5, 9, 13)
+    mv      a0, s0
+    li      a1, 1
+    li      a2, 5
+    li      a3, 9
+    li      a4, 13
+    call    chacha20_quarter_round
+
+    # QUARTERROUND(2, 6, 10, 14)
+    mv      a0, s0
+    li      a1, 2
+    li      a2, 6
+    li      a3, 10
+    li      a4, 14
+    call    chacha20_quarter_round
+
+    # QUARTERROUND(3, 7, 11, 15)
+    mv      a0, s0
+    li      a1, 3
+    li      a2, 7
+    li      a3, 11
+    li      a4, 15
+    call    chacha20_quarter_round
+
+    # =====================================================================
+    # Diagonal Rounds
+    # =====================================================================
+    # QUARTERROUND(0, 5, 10, 15)
+    mv      a0, s0
+    li      a1, 0
+    li      a2, 5
+    li      a3, 10
+    li      a4, 15
+    call    chacha20_quarter_round
+
+    # QUARTERROUND(1, 6, 11, 12)
+    mv      a0, s0
+    li      a1, 1
+    li      a2, 6
+    li      a3, 11
+    li      a4, 12
+    call    chacha20_quarter_round
+
+    # QUARTERROUND(2, 7, 8, 13)
+    mv      a0, s0
+    li      a1, 2
+    li      a2, 7
+    li      a3, 8
+    li      a4, 13
+    call    chacha20_quarter_round
+
+    # QUARTERROUND(3, 4, 9, 14)
+    mv      a0, s0
+    li      a1, 3
+    li      a2, 4
+    li      a3, 9
+    li      a4, 14
+    call    chacha20_quarter_round
+
+    # Epílogo
+    lw      s0, 0(sp)
+    lw      ra, 4(sp)
+    addi    sp, sp, 8
     ret
 
 # =============================================================================
@@ -266,105 +345,17 @@ chacha20_block:
     # =========================================================================
     # PASO 3: for i = 1 upto 10: inner_block(working_state)
     # =========================================================================
-    # inner_block ejecuta 8 quarter rounds por iteración (RFC 8439):
-    #
-    #   Column rounds (operan en columnas de la matriz 4x4):
-    #     QUARTERROUND(0, 4,  8, 12)  - columna 0
-    #     QUARTERROUND(1, 5,  9, 13)  - columna 1
-    #     QUARTERROUND(2, 6, 10, 14)  - columna 2
-    #     QUARTERROUND(3, 7, 11, 15)  - columna 3
-    #
-    #   Diagonal rounds (operan en diagonales):
-    #     QUARTERROUND(0, 5, 10, 15)  - diagonal principal
-    #     QUARTERROUND(1, 6, 11, 12)  - diagonal +1
-    #     QUARTERROUND(2, 7,  8, 13)  - diagonal +2
-    #     QUARTERROUND(3, 4,  9, 14)  - diagonal +3
-    #
-    # La matriz 4x4 del estado:
-    #    0  1  2  3
-    #    4  5  6  7
-    #    8  9 10 11
-    #   12 13 14 15
+    # inner_block ejecuta 8 quarter rounds (RFC 8439):
+    #   Column rounds:   QR(0,4,8,12) QR(1,5,9,13) QR(2,6,10,14) QR(3,7,11,15)
+    #   Diagonal rounds: QR(0,5,10,15) QR(1,6,11,12) QR(2,7,8,13) QR(3,4,9,14)
     # =========================================================================
     
     li      s4, 10              # s4 = contador de iteraciones (10 veces)
 
 .Linner_block_loop:
-    # =====================================================================
-    # Column Rounds - operan en columnas verticales
-    # =====================================================================
-    
-    # QUARTERROUND(0, 4, 8, 12) - columna 0
-    mv      a0, sp              # a0 = puntero al estado (working_state)
-    li      a1, 0               # índice a = 0
-    li      a2, 4               # índice b = 4
-    li      a3, 8               # índice c = 8
-    li      a4, 12              # índice d = 12
-    call    chacha20_quarter_round
+    mv      a0, sp              # a0 = puntero al working_state
+    call    chacha20_inner_block
 
-    # QUARTERROUND(1, 5, 9, 13) - columna 1
-    mv      a0, sp
-    li      a1, 1
-    li      a2, 5
-    li      a3, 9
-    li      a4, 13
-    call    chacha20_quarter_round
-
-    # QUARTERROUND(2, 6, 10, 14) - columna 2
-    mv      a0, sp
-    li      a1, 2
-    li      a2, 6
-    li      a3, 10
-    li      a4, 14
-    call    chacha20_quarter_round
-
-    # QUARTERROUND(3, 7, 11, 15) - columna 3
-    mv      a0, sp
-    li      a1, 3
-    li      a2, 7
-    li      a3, 11
-    li      a4, 15
-    call    chacha20_quarter_round
-
-    # =====================================================================
-    # Diagonal Rounds - operan en diagonales
-    # =====================================================================
-    
-    # QUARTERROUND(0, 5, 10, 15) - diagonal principal
-    mv      a0, sp
-    li      a1, 0
-    li      a2, 5
-    li      a3, 10
-    li      a4, 15
-    call    chacha20_quarter_round
-
-    # QUARTERROUND(1, 6, 11, 12) - diagonal +1
-    mv      a0, sp
-    li      a1, 1
-    li      a2, 6
-    li      a3, 11
-    li      a4, 12
-    call    chacha20_quarter_round
-
-    # QUARTERROUND(2, 7, 8, 13) - diagonal +2
-    mv      a0, sp
-    li      a1, 2
-    li      a2, 7
-    li      a3, 8
-    li      a4, 13
-    call    chacha20_quarter_round
-
-    # QUARTERROUND(3, 4, 9, 14) - diagonal +3
-    mv      a0, sp
-    li      a1, 3
-    li      a2, 4
-    li      a3, 9
-    li      a4, 14
-    call    chacha20_quarter_round
-
-    # =====================================================================
-    # Decrementar contador y repetir si no hemos terminado
-    # =====================================================================
     addi    s4, s4, -1          # s4 -= 1
     bnez    s4, .Linner_block_loop  # si s4 != 0, repetir
 
