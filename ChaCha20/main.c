@@ -10,6 +10,7 @@
 // Declaraciones de funciones en ensamblador (chacha20.s)
 // =============================================================================
 extern void chacha20_quarter_round(uint32_t *state, int a, int b, int c, int d);
+extern void chacha20_block(uint8_t *key, uint32_t counter, uint8_t *nonce, uint8_t *output);
 
 // =============================================================================
 // Funciones de salida UART (entorno bare-metal)
@@ -105,9 +106,100 @@ void test_quarter_round(void) {
 }
 
 // =============================================================================
+// TEST: ChaCha20 Block (RFC 8439 Section 2.3.2)
+// =============================================================================
+// Vector de prueba del RFC:
+//   Key:     00:01:02:...:1f (32 bytes)
+//   Nonce:   00:00:00:09:00:00:00:4a:00:00:00:00 (12 bytes)
+//   Counter: 1
+//   Output:  10 f1 e7 e4 d1 3b 59 15 ... (64 bytes)
+// =============================================================================
+void test_chacha20_block(void) {
+    print_string("\n=== TEST: ChaCha20 Block (RFC 8439 2.3.2) ===\n");
+    
+    // Key: 00 01 02 03 ... 1f (32 bytes)
+    // Inicialización manual para evitar memcpy en bare-metal
+    uint8_t key[32];
+    for (int i = 0; i < 32; i++) {
+        key[i] = i;  // 0x00, 0x01, 0x02, ... 0x1f
+    }
+    
+    // Nonce: 00 00 00 09 00 00 00 4a 00 00 00 00 (12 bytes)
+    uint8_t nonce[12];
+    nonce[0] = 0x00; nonce[1] = 0x00; nonce[2] = 0x00; nonce[3] = 0x09;
+    nonce[4] = 0x00; nonce[5] = 0x00; nonce[6] = 0x00; nonce[7] = 0x4a;
+    nonce[8] = 0x00; nonce[9] = 0x00; nonce[10] = 0x00; nonce[11] = 0x00;
+    
+    // Counter
+    uint32_t counter = 1;
+    
+    // Output buffer
+    uint8_t output[64];
+    
+    // Expected output (RFC 8439 Section 2.3.2)
+    uint8_t expected[64];
+    expected[0] = 0x10; expected[1] = 0xf1; expected[2] = 0xe7; expected[3] = 0xe4;
+    expected[4] = 0xd1; expected[5] = 0x3b; expected[6] = 0x59; expected[7] = 0x15;
+    expected[8] = 0x50; expected[9] = 0x0f; expected[10] = 0xdd; expected[11] = 0x1f;
+    expected[12] = 0xa3; expected[13] = 0x20; expected[14] = 0x71; expected[15] = 0xc4;
+    expected[16] = 0xc7; expected[17] = 0xd1; expected[18] = 0xf4; expected[19] = 0xc7;
+    expected[20] = 0x33; expected[21] = 0xc0; expected[22] = 0x68; expected[23] = 0x03;
+    expected[24] = 0x04; expected[25] = 0x22; expected[26] = 0xaa; expected[27] = 0x9a;
+    expected[28] = 0xc3; expected[29] = 0xd4; expected[30] = 0x6c; expected[31] = 0x4e;
+    expected[32] = 0xd2; expected[33] = 0x82; expected[34] = 0x64; expected[35] = 0x46;
+    expected[36] = 0x07; expected[37] = 0x9f; expected[38] = 0xaa; expected[39] = 0x09;
+    expected[40] = 0x14; expected[41] = 0xc2; expected[42] = 0xd7; expected[43] = 0x05;
+    expected[44] = 0xd9; expected[45] = 0x8b; expected[46] = 0x02; expected[47] = 0xa2;
+    expected[48] = 0xb5; expected[49] = 0x12; expected[50] = 0x9c; expected[51] = 0xd1;
+    expected[52] = 0xde; expected[53] = 0x16; expected[54] = 0x4e; expected[55] = 0xb9;
+    expected[56] = 0xcb; expected[57] = 0xd0; expected[58] = 0x83; expected[59] = 0xe8;
+    expected[60] = 0xa2; expected[61] = 0x50; expected[62] = 0x3c; expected[63] = 0x4e;
+    
+    // Llamar a chacha20_block
+    chacha20_block(key, counter, nonce, output);
+    
+    // Mostrar output
+    print_string("Output (primeros 16 bytes):\n  ");
+    for (int i = 0; i < 16; i++) {
+        print_hex_byte(output[i]);
+        print_char(' ');
+    }
+    print_char('\n');
+    
+    print_string("Expected:\n  ");
+    for (int i = 0; i < 16; i++) {
+        print_hex_byte(expected[i]);
+        print_char(' ');
+    }
+    print_char('\n');
+    
+    // Verificar todos los 64 bytes
+    int pass = 1;
+    for (int i = 0; i < 64; i++) {
+        if (output[i] != expected[i]) {
+            pass = 0;
+            print_string("Mismatch at byte ");
+            print_hex_byte(i);
+            print_string(": got ");
+            print_hex_byte(output[i]);
+            print_string(" expected ");
+            print_hex_byte(expected[i]);
+            print_char('\n');
+            break;
+        }
+    }
+    
+    if (pass) {
+        print_string("Result: PASS\n");
+    } else {
+        print_string("Result: FAIL\n");
+    }
+}
+
+// =============================================================================
 // Main
 // =============================================================================
-void main(void) {
+int main(void) {
     print_string("\n");
     print_string("============================================\n");
     print_string("   ChaCha20 RISC-V Implementation Tests    \n");
@@ -116,6 +208,9 @@ void main(void) {
     // Ejecutar prueba de quarter round
     test_quarter_round();
     
+    // Ejecutar prueba de chacha20_block
+    test_chacha20_block();
+    
     print_string("\n============================================\n");
     print_string("Tests completed.\n");
     
@@ -123,4 +218,6 @@ void main(void) {
     while (1) {
         __asm__ volatile ("nop");
     }
+    
+    return 0;
 }
