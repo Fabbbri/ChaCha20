@@ -7,6 +7,21 @@
 #include <stdint.h>
 
 // =============================================================================
+// Minimal libc shims (bare-metal)
+// =============================================================================
+// GCC may emit calls to memcpy for some optimizations even if the source code
+// does not call it explicitly. Provide a small implementation to avoid linking
+// against a full libc.
+void *memcpy(void *dest, const void *src, unsigned long n) {
+    uint8_t *d = (uint8_t *)dest;
+    const uint8_t *s = (const uint8_t *)src;
+    for (unsigned long i = 0; i < n; i++) {
+        d[i] = s[i];
+    }
+    return dest;
+}
+
+// =============================================================================
 // Declaraciones de funciones en ensamblador (chacha20.s)
 // =============================================================================
 extern void chacha20_quarter_round(uint32_t *state, int a, int b, int c, int d);
