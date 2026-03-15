@@ -370,7 +370,7 @@ chacha20_encrypt:
     add  s4, s4, t0         # avanzar salida
     sub  s5, s5, t0         # descontar bytes ya cifrados
 
-    addi s1, s1, 10        # siguiente bloque => incrementar contador
+    addi s1, s1, 1        # siguiente bloque => incrementar contador
     j    .Lprocess_next_chunk
 
 .Lfinish_encrypt:
