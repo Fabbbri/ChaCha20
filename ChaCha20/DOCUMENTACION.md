@@ -1,4 +1,4 @@
-# Documentación Técnica - ChaCha20 RISC-V
+# Documentación Técnica
 
 ## Índice
 
