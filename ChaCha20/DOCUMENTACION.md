@@ -210,9 +210,97 @@ or      x, t0, t1       # x = t0 | t1
 
 ---
 
-## 4. Bitácora de Bug
+## 4. Bitácora de Bug: Incremento Incorrecto del Contador en `chacha20_encrypt`
 
+### Descripción del error
 
+Durante el desarrollo de `chacha20_encrypt`, se introdujo un error en la lógica de actualización del contador de bloque. Al finalizar el procesamiento de cada chunk de 64 bytes, el contador debía incrementarse en **1**, pero por error se escribió el valor inmediato `10` en lugar de `1`:
+```riscv
+# Código incorrecto
+add s1, s1, 10        # ← debía ser 1, no 10
+
+# Código correcto
+add s1, s1, 1
+` `` 
+
+El efecto fue que, a partir del segundo bloque, el contador tomaba valores completamente erróneos (1 → 11 → 21 → ...), lo que producía un keystream incorrecto y hacía fallar la prueba `ChaCha20 Encrypt (RFC 8439 2.4.2)` desde el byte 40 en adelante, como se observa en la siguiente captura:
+
+![Resultado de pruebas con FAIL en Encrypt](./images/EvidenciaGDB.png)
+```
+Mismatch at byte 40: got d4 expected 07
+Result: FAIL
+` ``
+
+Los primeros 40 bytes coincidían porque pertenecen al **primer bloque**, cuyo contador inicial es correcto. El error solo se manifestaba a partir del segundo bloque.
+
+---
+
+### Detección
+
+El error fue identificado inicialmente mediante **revisión directa del código fuente**: al releer la lógica de avance de punteros y actualización del contador, la constante `10` resultó obviamente incorrecta en ese contexto.
+
+Sin embargo, para confirmar el comportamiento en ejecución y familiarizarse con el uso de GDB sobre RISC-V/QEMU, se instrumentó una sesión de depuración con breakpoints condicionales que imprimían el valor del registro `s1` (contador) antes y después de cada actualización, así como al entrar a `chacha20_block`:
+```gdb
+break chacha20.s:203
+commands
+    silent
+    printf "\n[chacha20_block] counter(s1)=0x%08x (%u)  a1(arg)=0x%08x (%u)\n", $s1, $s1, $a1, $a1
+    continue
+end
+
+break chacha20.s:373
+commands
+    silent
+    printf "\n[chacha20_encrypt] BEFORE update s1=0x%08x (%u)\n", $s1, $s1
+    continue
+end
+
+break chacha20.s:374
+commands
+    silent
+    printf "[chacha20_encrypt] AFTER  update s1=0x%08x (%u)\n", $s1, $s1
+    continue
+end
+` ``
+
+La salida de GDB confirmó el comportamiento incorrecto: el contador saltaba de `1` a `11` en la primera actualización, y de `11` a `21` en la segunda, en lugar de incrementarse de uno en uno:
+```
+[chacha20_block] counter(s1)=0x00000001 (1)   a1(arg)=0x00000001 (1)
+
+[chacha20_encrypt] BEFORE update s1=0x00000001 (1)
+[chacha20_encrypt] AFTER  update s1=0x0000000b (11)
+
+[chacha20_block] counter(s1)=0x0000000b (11)  a1(arg)=0x0000000b (11)
+
+[chacha20_encrypt] BEFORE update s1=0x0000000b (11)
+[chacha20_encrypt] AFTER  update s1=0x00000015 (21)
+` ``
+
+![Sesión GDB mostrando salto incorrecto del contador](./images/EvidenciaGDB1.png)
+
+---
+
+### Corrección
+
+Se reemplazó el inmediato incorrecto:
+```riscv
+# Antes (incorrecto)
+add s1, s1, 10
+
+# Después (correcto)
+add s1, s1, 1
+` ``
+
+Tras la corrección, la prueba de cifrado pasó satisfactoriamente, y los tres tests del RFC (Quarter Round, Block y Encrypt) produjeron `Result: PASS`.
+
+---
+
+### Lección aprendida
+
+Un error tipográfico en una constante inmediata puede ser invisible a simple vista durante la escritura, pero se manifiesta de forma reproducible y trazable con GDB. Instrumentar los puntos de actualización de estado con `printf` desde los `commands` de un breakpoint permite verificar la evolución de registros clave sin interrumpir manualmente la ejecución, lo que resulta especialmente útil en bucles de múltiples iteraciones.
+```
+
+> **Nota:** ajustá las rutas de las imágenes (`./images/EvidenciaGDB.png`) según donde las tengas en tu repositorio. Los triple backtick internos los escribí con un espacio para no romper el bloque exterior — quitá ese espacio al pegarlo.
 ---
 
 ## 5. Análisis de Resultados
