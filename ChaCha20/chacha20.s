@@ -12,6 +12,7 @@
 # Parámetros: a0=state_ptr, a1=idx_a, a2=idx_b, a3=idx_c, a4=idx_d
 # =============================================================================
 .globl chacha20_quarter_round
+.type  chacha20_quarter_round, @function
 chacha20_quarter_round:
     # Convertir índices a offsets (índice * 4 bytes)
     slli    a1, a1, 2           # offset_a = idx_a * 4
@@ -85,6 +86,7 @@ chacha20_quarter_round:
 # Parámetros: a0=state_ptr
 # =============================================================================
 .globl chacha20_inner_block
+.type  chacha20_inner_block, @function
 chacha20_inner_block:
     addi    sp, sp, -8
     sw      ra, 4(sp)
@@ -184,6 +186,7 @@ chacha20_inner_block:
 # Stack: sp+0..63 = working_state, sp+64..127 = state
 # =============================================================================
 .globl chacha20_block
+.type  chacha20_block, @function
 chacha20_block:
     # --- Prólogo ---
     addi    sp, sp, -176
@@ -301,3 +304,83 @@ chacha20_block:
     lw      ra, 172(sp)
     addi    sp, sp, 176
     ret
+
+# =============================================================================
+# chacha20_encrypt
+# =============================================================================
+# Cifra (o descifra) un mensaje de longitud arbitraria.
+# RFC 8439, Sección 2.4:
+#   - Por cada bloque de 64 bytes: generar keystream con chacha20_block
+#   - XOR del keystream con el bloque de plaintext → ciphertext
+# =============================================================================
+.globl chacha20_encrypt
+.type  chacha20_encrypt, @function
+chacha20_encrypt:
+    addi sp, sp, -92
+    sw   ra,  88(sp)
+    sw   s0,  84(sp)
+    sw   s1,  80(sp)
+    sw   s2,  76(sp)
+    sw   s3,  72(sp)
+    sw   s4,  68(sp)
+    sw   s5,  64(sp)
+
+    mv   s0, a0             # s0 = puntero a key
+    mv   s1, a1             # s1 = contador actual
+    mv   s2, a2             # s2 = puntero a nonce
+    mv   s3, a3             # s3 = entrada (plaintext)
+    mv   s4, a4             # s4 = salida (ciphertext)
+    mv   s5, a5             # s5 = cantidad de bytes por cifrar
+
+.Lprocess_next_chunk:
+    beqz s5, .Lfinish_encrypt
+
+    # Construir bloque de keystream en el espacio local del stack
+    mv   a0, s0             # key
+    mv   a1, s1             # counter
+    mv   a2, s2             # nonce
+    addi a3, sp, 0          # destino del bloque generado
+    call chacha20_block
+
+    # Se procesan hasta 64 bytes o lo que quede pendiente
+    li   t0, 0              # índice dentro del bloque
+    li   t1, 64             # tamaño máximo del bloque ChaCha20
+
+.Lbyte_mix_loop:
+    bgeu t0, s5, .Lend_byte_mix   # salir si ya no quedan bytes
+    bgeu t0, t1, .Lend_byte_mix   # salir si ya se procesaron 64 bytes
+
+    add  t2, s3, t0         # dirección de plaintext[i]
+    lbu  t3, 0(t2)          # cargar byte del mensaje
+
+    add  t2, sp, t0         # dirección de keystream[i]
+    lbu  t4, 0(t2)          # cargar byte del flujo de clave
+
+    xor  t3, t3, t4         # byte cifrado = mensaje XOR keystream
+
+    add  t2, s4, t0         # dirección de ciphertext[i]
+    sb   t3, 0(t2)          # escribir resultado
+
+    addi t0, t0, 1
+    j    .Lbyte_mix_loop
+
+.Lend_byte_mix:
+    # Mover punteros según los bytes ya transformados
+    add  s3, s3, t0         # avanzar entrada
+    add  s4, s4, t0         # avanzar salida
+    sub  s5, s5, t0         # descontar bytes ya cifrados
+
+    addi s1, s1, 1        # siguiente bloque => incrementar contador
+    j    .Lprocess_next_chunk
+
+.Lfinish_encrypt:
+    lw   s5,  64(sp)
+    lw   s4,  68(sp)
+    lw   s3,  72(sp)
+    lw   s2,  76(sp)
+    lw   s1,  80(sp)
+    lw   s0,  84(sp)
+    lw   ra,  88(sp)
+    addi sp, sp, 92
+    ret
+

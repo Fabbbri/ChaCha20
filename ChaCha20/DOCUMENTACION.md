@@ -1,4 +1,4 @@
-# Documentación Técnica - ChaCha20 RISC-V
+# Documentación Técnica
 
 ## Índice
 
@@ -210,10 +210,80 @@ or      x, t0, t1       # x = t0 | t1
 
 ---
 
-## 4. Bitácora de Bug
+## 4. Bitácora de Bug: Incremento Incorrecto del Contador en `chacha20_encrypt`
 
+### Descripción del error
+
+Durante el desarrollo de `chacha20_encrypt`, se introdujo un error en la lógica de actualización del contador de bloque. Al finalizar el procesamiento de cada chunk de 64 bytes, el contador debía incrementarse en **1**, pero por error se escribió el valor `10` en lugar de `1`:
+```riscv
+# Código incorrecto
+addi s1, s1, 10        # ← debía ser 1, no 10
+
+# Código correcto
+addi s1, s1, 1
+``` 
+
+El efecto fue que, a partir del segundo bloque, el contador tomaba valores completamente erróneos (1 → 11 → 21 → ...), lo que producía un keystream incorrecto y hacía fallar la prueba `ChaCha20 Encrypt (RFC 8439 2.4.2)` desde el byte 40 en adelante, como se observa en la siguiente captura:
+
+
+![Resultado de pruebas con FAIL en Encrypt](./EvidenciaGDB.png)
+
+
+
+Los primeros 40 bytes coincidían porque pertenecen al **primer bloque**, cuyo contador inicial es correcto. El error solo se manifestaba a partir del segundo bloque.
 
 ---
+
+### Detección
+
+El error fue identificado inicialmente mediante **revisión directa del código fuente**: al releer la lógica de avance de punteros y actualización del contador, la constante `10` resultó obviamente incorrecta en ese contexto.
+
+Sin embargo, para confirmar el comportamiento en ejecución y familiarizarse con el uso de GDB sobre RISC-V/QEMU, se instrumentó una sesión de depuración con breakpoints condicionales que imprimían el valor del registro `s1` (contador) antes y después de cada actualización, así como al entrar a `chacha20_block`:
+```gdb
+break chacha20.s:203
+commands
+    silent
+    printf "\n[chacha20_block] counter(s1)=0x%08x (%u)  a1(arg)=0x%08x (%u)\n", $s1, $s1, $a1, $a1
+    continue
+end
+
+break chacha20.s:373
+commands
+    silent
+    printf "\n[chacha20_encrypt] BEFORE update s1=0x%08x (%u)\n", $s1, $s1
+    continue
+end
+
+break chacha20.s:374
+commands
+    silent
+    printf "[chacha20_encrypt] AFTER  update s1=0x%08x (%u)\n", $s1, $s1
+    continue
+end
+` ``
+
+La salida de GDB confirmó el comportamiento incorrecto: el contador saltaba de `1` a `11` en la primera actualización, y de `11` a `21` en la segunda, en lugar de incrementarse de uno en uno:
+```
+
+![Sesión GDB mostrando salto incorrecto del contador](./EvidenciaGDB1.png)
+
+---
+
+### Corrección
+
+Se reemplazó el valor incorrecto:
+```riscv
+# Antes (incorrecto)
+addi s1, s1, 10
+
+# Después (correcto)
+addi s1, s1, 1
+```
+Tras la corrección, la prueba de cifrado pasó satisfactoriamente, y los tres tests del RFC (Quarter Round, Block y Encrypt) produjeron `Result: PASS`.
+
+
+
+
 
 ## 5. Análisis de Resultados
 
