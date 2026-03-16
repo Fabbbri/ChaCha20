@@ -62,61 +62,44 @@ void print_hex_word(uint32_t word) {
 }
 
 // =============================================================================
-// TEST: Quarter Round (RFC 8439 Section 2.1.1)
+// TEST 1: Quarter Round (RFC 8439 Section 2.1.1)
 // =============================================================================
 // Vector de prueba del RFC:
 //   Input:  a=0x11111111, b=0x01020304, c=0x9b8d6f43, d=0x01234567
 //   Output: a=0xea2a92f4, b=0xcb1cf8ce, c=0x4581472e, d=0x5881c4bb
 // =============================================================================
 void test_quarter_round(void) {
-    print_string("\n=== TEST: Quarter Round (RFC 8439 2.1.1) ===\n");
-    
-    // Usamos un array de 16 palabras (estado ChaCha20)
-    // Inicialización manual para evitar memset/memcpy en bare-metal
-    uint32_t state[16];
-    state[0] = 0x11111111;   // a
-    state[1] = 0x01020304;   // b
-    state[2] = 0x9b8d6f43;   // c
-    state[3] = 0x01234567;   // d
-    state[4] = 0;
-    state[5] = 0;
-    state[6] = 0;
-    state[7] = 0;
-    state[8] = 0;
-    state[9] = 0;
-    state[10] = 0;
-    state[11] = 0;
-    state[12] = 0;
-    state[13] = 0;
-    state[14] = 0;
-    state[15] = 0;
-    
+    print_string("\n=== TEST 1: Quarter Round (RFC 8439 Section 2.1.1) ===\n");
+
+    uint32_t state[4];
+    state[0] = 0x11111111;
+    state[1] = 0x01020304;
+    state[2] = 0x9b8d6f43;
+    state[3] = 0x01234567;
+
     print_string("Input:\n");
     print_string("  a = 0x"); print_hex_word(state[0]); print_char('\n');
     print_string("  b = 0x"); print_hex_word(state[1]); print_char('\n');
     print_string("  c = 0x"); print_hex_word(state[2]); print_char('\n');
     print_string("  d = 0x"); print_hex_word(state[3]); print_char('\n');
-    
-    // Llamar a la función quarter round
+
     chacha20_quarter_round(state, 0, 1, 2, 3);
-    
+
     print_string("Output:\n");
     print_string("  a = 0x"); print_hex_word(state[0]); print_char('\n');
     print_string("  b = 0x"); print_hex_word(state[1]); print_char('\n');
     print_string("  c = 0x"); print_hex_word(state[2]); print_char('\n');
     print_string("  d = 0x"); print_hex_word(state[3]); print_char('\n');
-    
-    // Valores esperados según RFC
+
     print_string("Expected:\n");
     print_string("  a = 0xea2a92f4\n");
     print_string("  b = 0xcb1cf8ce\n");
     print_string("  c = 0x4581472e\n");
     print_string("  d = 0x5881c4bb\n");
-    
-    // Verificar resultados
-    if (state[0] == 0xea2a92f4 && 
+
+    if (state[0] == 0xea2a92f4 &&
         state[1] == 0xcb1cf8ce &&
-        state[2] == 0x4581472e && 
+        state[2] == 0x4581472e &&
         state[3] == 0x5881c4bb) {
         print_string("Result: PASS\n");
     } else {
@@ -125,80 +108,63 @@ void test_quarter_round(void) {
 }
 
 // =============================================================================
-// TEST: ChaCha20 Block (RFC 8439 Section 2.3.2)
+// TEST 2: ChaCha20 Block (RFC 8439 Appendix A.1, Test Vector #1)
 // =============================================================================
-// Vector de prueba del RFC:
-//   Key:     00:01:02:...:1f (32 bytes)
-//   Nonce:   00:00:00:09:00:00:00:4a:00:00:00:00 (12 bytes)
-//   Counter: 1
-//   Output:  10 f1 e7 e4 d1 3b 59 15 ... (64 bytes)
+// Vector de prueba:
+//   Key:     32 bytes de ceros
+//   Nonce:   12 bytes de ceros
+//   Counter: 0
+//   Output:  76 b8 e0 ad ... (64 bytes)
 // =============================================================================
 void test_chacha20_block(void) {
-    print_string("\n=== TEST: ChaCha20 Block (RFC 8439 2.3.2) ===\n");
-    
-    // Key: 00 01 02 03 ... 1f (32 bytes)
-    // Inicialización manual para evitar memcpy en bare-metal
+    print_string("\n=== TEST 2: ChaCha20 Block (RFC 8439 Appendix A.1, TV #1) ===\n");
+
+    // Key: 32 bytes de ceros
     uint8_t key[32];
-    for (int i = 0; i < 32; i++) {
-        key[i] = i;  // 0x00, 0x01, 0x02, ... 0x1f
-    }
-    
-    // Nonce: 00 00 00 09 00 00 00 4a 00 00 00 00 (12 bytes)
+    for (int i = 0; i < 32; i++) key[i] = 0x00;
+
+    // Nonce: 12 bytes de ceros
     uint8_t nonce[12];
-    nonce[0] = 0x00; nonce[1] = 0x00; nonce[2] = 0x00; nonce[3] = 0x09;
-    nonce[4] = 0x00; nonce[5] = 0x00; nonce[6] = 0x00; nonce[7] = 0x4a;
-    nonce[8] = 0x00; nonce[9] = 0x00; nonce[10] = 0x00; nonce[11] = 0x00;
-    
-    // Counter
-    uint32_t counter = 1;
-    
-    // Output buffer
+    for (int i = 0; i < 12; i++) nonce[i] = 0x00;
+
+    uint32_t counter = 0;
+
     uint8_t output[64];
-    
-    // Expected output (RFC 8439 Section 2.3.2)
-    uint8_t expected[64];
-    expected[0] = 0x10; expected[1] = 0xf1; expected[2] = 0xe7; expected[3] = 0xe4;
-    expected[4] = 0xd1; expected[5] = 0x3b; expected[6] = 0x59; expected[7] = 0x15;
-    expected[8] = 0x50; expected[9] = 0x0f; expected[10] = 0xdd; expected[11] = 0x1f;
-    expected[12] = 0xa3; expected[13] = 0x20; expected[14] = 0x71; expected[15] = 0xc4;
-    expected[16] = 0xc7; expected[17] = 0xd1; expected[18] = 0xf4; expected[19] = 0xc7;
-    expected[20] = 0x33; expected[21] = 0xc0; expected[22] = 0x68; expected[23] = 0x03;
-    expected[24] = 0x04; expected[25] = 0x22; expected[26] = 0xaa; expected[27] = 0x9a;
-    expected[28] = 0xc3; expected[29] = 0xd4; expected[30] = 0x6c; expected[31] = 0x4e;
-    expected[32] = 0xd2; expected[33] = 0x82; expected[34] = 0x64; expected[35] = 0x46;
-    expected[36] = 0x07; expected[37] = 0x9f; expected[38] = 0xaa; expected[39] = 0x09;
-    expected[40] = 0x14; expected[41] = 0xc2; expected[42] = 0xd7; expected[43] = 0x05;
-    expected[44] = 0xd9; expected[45] = 0x8b; expected[46] = 0x02; expected[47] = 0xa2;
-    expected[48] = 0xb5; expected[49] = 0x12; expected[50] = 0x9c; expected[51] = 0xd1;
-    expected[52] = 0xde; expected[53] = 0x16; expected[54] = 0x4e; expected[55] = 0xb9;
-    expected[56] = 0xcb; expected[57] = 0xd0; expected[58] = 0x83; expected[59] = 0xe8;
-    expected[60] = 0xa2; expected[61] = 0x50; expected[62] = 0x3c; expected[63] = 0x4e;
-    
-    // Llamar a chacha20_block
+
+    // Expected output (RFC 8439 Appendix A.1, Test Vector #1)
+    static const uint8_t expected[64] = {
+        0x76, 0xb8, 0xe0, 0xad, 0xa0, 0xf1, 0x3d, 0x90,
+        0x40, 0x5d, 0x6a, 0xe5, 0x53, 0x86, 0xbd, 0x28,
+        0xbd, 0xd2, 0x19, 0xb8, 0xa0, 0x8d, 0xed, 0x1a,
+        0xa8, 0x36, 0xef, 0xcc, 0x8b, 0x77, 0x0d, 0xc7,
+        0xda, 0x41, 0x59, 0x7c, 0x51, 0x57, 0x48, 0x8d,
+        0x77, 0x24, 0xe0, 0x3f, 0xb8, 0xd8, 0x4a, 0x37,
+        0x6a, 0x43, 0xb8, 0xf4, 0x15, 0x18, 0xa1, 0x1c,
+        0xc3, 0x87, 0xb6, 0x69, 0xb2, 0xee, 0x65, 0x86
+    };
+
     chacha20_block(key, counter, nonce, output);
-    
-    // Mostrar output
+
     print_string("Output (primeros 16 bytes):\n  ");
     for (int i = 0; i < 16; i++) {
         print_hex_byte(output[i]);
         print_char(' ');
     }
     print_char('\n');
-    
+
     print_string("Expected:\n  ");
     for (int i = 0; i < 16; i++) {
         print_hex_byte(expected[i]);
         print_char(' ');
     }
     print_char('\n');
-    
-    // Verificar todos los 64 bytes
+
     int pass = 1;
     for (int i = 0; i < 64; i++) {
         if (output[i] != expected[i]) {
             pass = 0;
             print_string("Mismatch at byte ");
-            print_hex_byte(i);
+            print_hex_byte((uint8_t)i);
             print_string(": got ");
             print_hex_byte(output[i]);
             print_string(" expected ");
@@ -207,7 +173,7 @@ void test_chacha20_block(void) {
             break;
         }
     }
-    
+
     if (pass) {
         print_string("Result: PASS\n");
     } else {
@@ -216,60 +182,82 @@ void test_chacha20_block(void) {
 }
 
 // =============================================================================
-// TEST: ChaCha20 Encrypt (RFC 8439 Section 2.4.2)
+// TEST 3: ChaCha20 Encrypt + Decrypt, mensaje de 3+ bloques (RFC 8439 A.2 TV #2)
 // =============================================================================
-// Test vector "Sunscreen":
-//   Key     = 00 01 02 ... 1f
-//   Nonce   = 00 00 00 00 00 00 00 4a 00 00 00 00
-//   Counter = 1
-//   Plaintext/Ciphertext as specified in RFC 8439 §2.4.2
+// Vector de prueba:
+//   Key:     31 bytes de ceros seguidos de 0x01 (32 bytes total)
+//   Nonce:   11 bytes de ceros seguidos de 0x02 (12 bytes total)
+//   Counter: 1
+//   Mensaje: 200 bytes (3 bloques completos + 8 bytes) del texto IETF boilerplate
+//            del Appendix A.2, Test Vector #2 del RFC 8439
+//
+// Se verifican los primeros 200 bytes del cifrado contra el RFC y luego
+// se descifra para comprobar que decrypt(encrypt(P)) == P.
 // =============================================================================
-void test_chacha20_encrypt(void) {
-    print_string("\n=== TEST: ChaCha20 Encrypt (RFC 8439 2.4.2) ===\n");
+void test_chacha20_encrypt_decrypt(void) {
+    print_string("\n=== TEST 3: ChaCha20 Encrypt+Decrypt 3+ bloques (RFC 8439 A.2 TV #2) ===\n");
 
-    // Key bytes 00..1f, stored as little-endian 32-bit words (aligned)
+    // Key: 31 bytes 0x00 + 0x01, almacenado como palabras little-endian
     uint32_t key[8];
-    key[0] = 0x03020100;
-    key[1] = 0x07060504;
-    key[2] = 0x0b0a0908;
-    key[3] = 0x0f0e0d0c;
-    key[4] = 0x13121110;
-    key[5] = 0x17161514;
-    key[6] = 0x1b1a1918;
-    key[7] = 0x1f1e1d1c;
+    key[0] = 0x00000000;
+    key[1] = 0x00000000;
+    key[2] = 0x00000000;
+    key[3] = 0x00000000;
+    key[4] = 0x00000000;
+    key[5] = 0x00000000;
+    key[6] = 0x00000000;
+    key[7] = 0x01000000;
 
-    // Nonce: 00 00 00 00 00 00 00 4a 00 00 00 00
+    // Nonce: 11 bytes 0x00 + 0x02, almacenado como palabras little-endian
     uint32_t nonce[3];
     nonce[0] = 0x00000000;
-    nonce[1] = 0x4a000000;
-    nonce[2] = 0x00000000;
+    nonce[1] = 0x00000000;
+    nonce[2] = 0x02000000;
 
     uint32_t counter = 1;
 
-    static const uint8_t plaintext[114] = {
-        0x4c, 0x61, 0x64, 0x69, 0x65, 0x73, 0x20, 0x61, 0x6e, 0x64, 0x20, 0x47, 0x65, 0x6e, 0x74, 0x6c,
-        0x65, 0x6d, 0x65, 0x6e, 0x20, 0x6f, 0x66, 0x20, 0x74, 0x68, 0x65, 0x20, 0x63, 0x6c, 0x61, 0x73,
-        0x73, 0x20, 0x6f, 0x66, 0x20, 0x27, 0x39, 0x39, 0x3a, 0x20, 0x49, 0x66, 0x20, 0x49, 0x20, 0x63,
-        0x6f, 0x75, 0x6c, 0x64, 0x20, 0x6f, 0x66, 0x66, 0x65, 0x72, 0x20, 0x79, 0x6f, 0x75, 0x20, 0x6f,
-        0x6e, 0x6c, 0x79, 0x20, 0x6f, 0x6e, 0x65, 0x20, 0x74, 0x69, 0x70, 0x20, 0x66, 0x6f, 0x72, 0x20,
-        0x74, 0x68, 0x65, 0x20, 0x66, 0x75, 0x74, 0x75, 0x72, 0x65, 0x2c, 0x20, 0x73, 0x75, 0x6e, 0x73,
-        0x63, 0x72, 0x65, 0x65, 0x6e, 0x20, 0x77, 0x6f, 0x75, 0x6c, 0x64, 0x20, 0x62, 0x65, 0x20, 0x69,
-        0x74, 0x2e
+    // Plaintext: primeros 200 bytes del texto IETF boilerplate (RFC 8439 A.2 TV #2)
+    // "Any submission to the IETF intended by the Contributor for publication as
+    //  all or part of an IETF Internet-Draft or RFC and any statement made within
+    //  the context of an IETF activity is considered an \"IETF Contribution\"."
+    static const uint8_t plaintext[200] = {
+        0x41, 0x6e, 0x79, 0x20, 0x73, 0x75, 0x62, 0x6d, 0x69, 0x73, 0x73, 0x69, 0x6f, 0x6e, 0x20, 0x74,
+        0x6f, 0x20, 0x74, 0x68, 0x65, 0x20, 0x49, 0x45, 0x54, 0x46, 0x20, 0x69, 0x6e, 0x74, 0x65, 0x6e,
+        0x64, 0x65, 0x64, 0x20, 0x62, 0x79, 0x20, 0x74, 0x68, 0x65, 0x20, 0x43, 0x6f, 0x6e, 0x74, 0x72,
+        0x69, 0x62, 0x75, 0x74, 0x6f, 0x72, 0x20, 0x66, 0x6f, 0x72, 0x20, 0x70, 0x75, 0x62, 0x6c, 0x69,
+        0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x20, 0x61, 0x73, 0x20, 0x61, 0x6c, 0x6c, 0x20, 0x6f, 0x72,
+        0x20, 0x70, 0x61, 0x72, 0x74, 0x20, 0x6f, 0x66, 0x20, 0x61, 0x6e, 0x20, 0x49, 0x45, 0x54, 0x46,
+        0x20, 0x49, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x65, 0x74, 0x2d, 0x44, 0x72, 0x61, 0x66, 0x74, 0x20,
+        0x6f, 0x72, 0x20, 0x52, 0x46, 0x43, 0x20, 0x61, 0x6e, 0x64, 0x20, 0x61, 0x6e, 0x79, 0x20, 0x73,
+        0x74, 0x61, 0x74, 0x65, 0x6d, 0x65, 0x6e, 0x74, 0x20, 0x6d, 0x61, 0x64, 0x65, 0x20, 0x77, 0x69,
+        0x74, 0x68, 0x69, 0x6e, 0x20, 0x74, 0x68, 0x65, 0x20, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74,
+        0x20, 0x6f, 0x66, 0x20, 0x61, 0x6e, 0x20, 0x49, 0x45, 0x54, 0x46, 0x20, 0x61, 0x63, 0x74, 0x69,
+        0x76, 0x69, 0x74, 0x79, 0x20, 0x69, 0x73, 0x20, 0x63, 0x6f, 0x6e, 0x73, 0x69, 0x64, 0x65, 0x72,
+        0x65, 0x64, 0x20, 0x61, 0x6e, 0x20, 0x22, 0x49
     };
 
-    static const uint8_t expected[114] = {
-        0x6e, 0x2e, 0x35, 0x9a, 0x25, 0x68, 0xf9, 0x80, 0x41, 0xba, 0x07, 0x28, 0xdd, 0x0d, 0x69, 0x81,
-        0xe9, 0x7e, 0x7a, 0xec, 0x1d, 0x43, 0x60, 0xc2, 0x0a, 0x27, 0xaf, 0xcc, 0xfd, 0x9f, 0xae, 0x0b,
-        0xf9, 0x1b, 0x65, 0xc5, 0x52, 0x47, 0x33, 0xab, 0x8f, 0x59, 0x3d, 0xab, 0xcd, 0x62, 0xb3, 0x57,
-        0x16, 0x39, 0xd6, 0x24, 0xe6, 0x51, 0x52, 0xab, 0x8f, 0x53, 0x0c, 0x35, 0x9f, 0x08, 0x61, 0xd8,
-        0x07, 0xca, 0x0d, 0xbf, 0x50, 0x0d, 0x6a, 0x61, 0x56, 0xa3, 0x8e, 0x08, 0x8a, 0x22, 0xb6, 0x5e,
-        0x52, 0xbc, 0x51, 0x4d, 0x16, 0xcc, 0xf8, 0x06, 0x81, 0x8c, 0xe9, 0x1a, 0xb7, 0x79, 0x37, 0x36,
-        0x5a, 0xf9, 0x0b, 0xbf, 0x74, 0xa3, 0x5b, 0xe6, 0xb4, 0x0b, 0x8e, 0xed, 0xf2, 0x78, 0x5e, 0x42,
-        0x87, 0x4d
+    // Expected ciphertext (RFC 8439 Appendix A.2, Test Vector #2, primeros 200 bytes)
+    static const uint8_t expected[200] = {
+        0xa3, 0xfb, 0xf0, 0x7d, 0xf3, 0xfa, 0x2f, 0xde, 0x4f, 0x37, 0x6c, 0xa2, 0x3e, 0x82, 0x73, 0x70,
+        0x41, 0x60, 0x5d, 0x9f, 0x4f, 0x4f, 0x57, 0xbd, 0x8c, 0xff, 0x2c, 0x1d, 0x4b, 0x79, 0x55, 0xec,
+        0x2a, 0x97, 0x94, 0x8b, 0xd3, 0x72, 0x29, 0x15, 0xc8, 0xf3, 0xd3, 0x37, 0xf7, 0xd3, 0x70, 0x05,
+        0x0e, 0x9e, 0x96, 0xd6, 0x47, 0xb7, 0xc3, 0x9f, 0x56, 0xe0, 0x31, 0xca, 0x5e, 0xb6, 0x25, 0x0d,
+        0x40, 0x42, 0xe0, 0x27, 0x85, 0xec, 0xec, 0xfa, 0x4b, 0x4b, 0xb5, 0xe8, 0xea, 0xd0, 0x44, 0x0e,
+        0x20, 0xb6, 0xe8, 0xdb, 0x09, 0xd8, 0x81, 0xa7, 0xc6, 0x13, 0x2f, 0x42, 0x0e, 0x52, 0x79, 0x50,
+        0x42, 0xbd, 0xfa, 0x77, 0x73, 0xd8, 0xa9, 0x05, 0x14, 0x47, 0xb3, 0x29, 0x1c, 0xe1, 0x41, 0x1c,
+        0x68, 0x04, 0x65, 0x55, 0x2a, 0xa6, 0xc4, 0x05, 0xb7, 0x76, 0x4d, 0x5e, 0x87, 0xbe, 0xa8, 0x5a,
+        0xd0, 0x0f, 0x84, 0x49, 0xed, 0x8f, 0x72, 0xd0, 0xd6, 0x62, 0xab, 0x05, 0x26, 0x91, 0xca, 0x66,
+        0x42, 0x4b, 0xc8, 0x6d, 0x2d, 0xf8, 0x0e, 0xa4, 0x1f, 0x43, 0xab, 0xf9, 0x37, 0xd3, 0x25, 0x9d,
+        0xc4, 0xb2, 0xd0, 0xdf, 0xb4, 0x8a, 0x6c, 0x91, 0x39, 0xdd, 0xd7, 0xf7, 0x69, 0x66, 0xe9, 0x28,
+        0xe6, 0x35, 0x55, 0x3b, 0xa7, 0x6c, 0x5c, 0x87, 0x9d, 0x7b, 0x35, 0xd4, 0x9e, 0xb2, 0xe6, 0x2b,
+        0x08, 0x71, 0xcd, 0xac, 0x63, 0x89, 0x39, 0xe2
     };
 
-    uint8_t ciphertext[114];
-    chacha20_encrypt(key, counter, nonce, plaintext, ciphertext, (uint32_t)sizeof(plaintext));
+    uint8_t ciphertext[200];
+    uint8_t decrypted[200];
+
+    // --- Cifrado ---
+    chacha20_encrypt(key, counter, nonce, plaintext, ciphertext, 200);
 
     print_string("Ciphertext (primeros 16 bytes):\n  ");
     for (int i = 0; i < 16; i++) {
@@ -278,18 +266,18 @@ void test_chacha20_encrypt(void) {
     }
     print_char('\n');
 
-    print_string("Expected (primeros 16 bytes):\n  ");
+    print_string("Expected  (primeros 16 bytes):\n  ");
     for (int i = 0; i < 16; i++) {
         print_hex_byte(expected[i]);
         print_char(' ');
     }
     print_char('\n');
 
-    int pass = 1;
-    for (int i = 0; i < (int)sizeof(expected); i++) {
+    int enc_pass = 1;
+    for (int i = 0; i < 200; i++) {
         if (ciphertext[i] != expected[i]) {
-            pass = 0;
-            print_string("Mismatch at byte ");
+            enc_pass = 0;
+            print_string("Encrypt mismatch at byte ");
             print_hex_byte((uint8_t)i);
             print_string(": got ");
             print_hex_byte(ciphertext[i]);
@@ -300,10 +288,29 @@ void test_chacha20_encrypt(void) {
         }
     }
 
-    if (pass) {
-        print_string("Result: PASS\n");
+    // --- Descifrado: aplicar chacha20_encrypt al ciphertext con los mismos params ---
+    chacha20_encrypt(key, counter, nonce, ciphertext, decrypted, 200);
+
+    int dec_pass = 1;
+    for (int i = 0; i < 200; i++) {
+        if (decrypted[i] != plaintext[i]) {
+            dec_pass = 0;
+            print_string("Decrypt mismatch at byte ");
+            print_hex_byte((uint8_t)i);
+            print_string(": got ");
+            print_hex_byte(decrypted[i]);
+            print_string(" expected ");
+            print_hex_byte(plaintext[i]);
+            print_char('\n');
+            break;
+        }
+    }
+
+    if (enc_pass && dec_pass) {
+        print_string("Result: PASS (200 bytes = 3 bloques completos + 8 bytes)\n");
     } else {
-        print_string("Result: FAIL\n");
+        if (!enc_pass) print_string("Result: FAIL (cifrado incorrecto)\n");
+        if (!dec_pass) print_string("Result: FAIL (descifrado incorrecto)\n");
     }
 }
 
@@ -315,23 +322,17 @@ int main(void) {
     print_string("============================================\n");
     print_string("   ChaCha20 RISC-V Implementation Tests    \n");
     print_string("============================================\n");
-    
-    // Ejecutar prueba de quarter round
-    test_quarter_round();
-    
-    // Ejecutar prueba de chacha20_block
-    test_chacha20_block();
 
-    // Ejecutar prueba de chacha20_encrypt
-    test_chacha20_encrypt();
-    
+    test_quarter_round();
+    test_chacha20_block();
+    test_chacha20_encrypt_decrypt();
+
     print_string("\n============================================\n");
     print_string("Tests completed.\n");
-    
-    // Loop infinito
+
     while (1) {
         __asm__ volatile ("nop");
     }
-    
+
     return 0;
 }
