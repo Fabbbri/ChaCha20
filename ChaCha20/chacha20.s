@@ -88,7 +88,7 @@ chacha20_quarter_round:
 .globl chacha20_inner_block
 .type  chacha20_inner_block, @function
 chacha20_inner_block:
-    addi    sp, sp, -8
+    addi    sp, sp, -16
     sw      ra, 4(sp)
     sw      s0, 0(sp)
     mv      s0, a0              # s0 = state_ptr (preservar)
@@ -167,7 +167,7 @@ chacha20_inner_block:
 
     lw      s0, 0(sp)
     lw      ra, 4(sp)
-    addi    sp, sp, 8
+    addi    sp, sp, 16
     ret
 
 # =============================================================================
@@ -316,7 +316,7 @@ chacha20_block:
 .globl chacha20_encrypt
 .type  chacha20_encrypt, @function
 chacha20_encrypt:
-    addi sp, sp, -92
+    addi sp, sp, -96
     sw   ra,  88(sp)
     sw   s0,  84(sp)
     sw   s1,  80(sp)
@@ -381,6 +381,6 @@ chacha20_encrypt:
     lw   s1,  80(sp)
     lw   s0,  84(sp)
     lw   ra,  88(sp)
-    addi sp, sp, 92
+    addi sp, sp, 96
     ret
 
