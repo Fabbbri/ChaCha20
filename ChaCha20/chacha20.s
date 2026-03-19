@@ -14,13 +14,13 @@
 .globl chacha20_quarter_round
 .type  chacha20_quarter_round, @function
 chacha20_quarter_round:
-    # Convertir índices a offsets (índice * 4 bytes)
+    # Convertir índices a offsets de memoria (cada word = 4 bytes)
     slli    a1, a1, 2           # offset_a = idx_a * 4
     slli    a2, a2, 2           # offset_b = idx_b * 4
     slli    a3, a3, 2           # offset_c = idx_c * 4
     slli    a4, a4, 2           # offset_d = idx_d * 4
 
-    # Cargar state[a], state[b], state[c], state[d]
+    # Cargar las 4 palabras del estado a registros temporales
     add     t0, a0, a1
     lw      t2, 0(t0)           # t2 = a = state[idx_a]
     add     t0, a0, a2
@@ -31,42 +31,42 @@ chacha20_quarter_round:
     lw      t5, 0(t0)           # t5 = d = state[idx_d]
 
     # Línea 1: a += b; d ^= a; d <<<= 16
-    add     t2, t2, t3          # a += b
-    xor     t5, t5, t2          # d ^= a
-    slli    t0, t5, 16
-    srli    t1, t5, 16
-    or      t5, t0, t1          # d <<<= 16
+    add     t2, t2, t3          # a += b (suma ARX)
+    xor     t5, t5, t2          # d ^= a (difusión)
+    slli    t0, t5, 16          # ROL(16): desplazar izquierda 16 bits
+    srli    t1, t5, 16          # ROL(16): desplazar derecha 32-16=16 bits
+    or      t5, t0, t1          # ROL(16): combinar ambas partes
 
     # Línea 2: c += d; b ^= c; b <<<= 12
     add     t4, t4, t5          # c += d
     xor     t3, t3, t4          # b ^= c
-    slli    t0, t3, 12
-    srli    t1, t3, 20
-    or      t3, t0, t1          # b <<<= 12
+    slli    t0, t3, 12          # ROL(12): parte alta
+    srli    t1, t3, 20          # ROL(12): parte baja (32-12=20)
+    or      t3, t0, t1          # ROL(12): fusionar
 
     # Línea 3: a += b; d ^= a; d <<<= 8
     add     t2, t2, t3          # a += b
     xor     t5, t5, t2          # d ^= a
-    slli    t0, t5, 8
-    srli    t1, t5, 24
-    or      t5, t0, t1          # d <<<= 8
+    slli    t0, t5, 8           # ROL(8): parte alta
+    srli    t1, t5, 24          # ROL(8): parte baja (32-8=24)
+    or      t5, t0, t1          # ROL(8): fusionar
 
     # Línea 4: c += d; b ^= c; b <<<= 7
     add     t4, t4, t5          # c += d
     xor     t3, t3, t4          # b ^= c
-    slli    t0, t3, 7
-    srli    t1, t3, 25
-    or      t3, t0, t1          # b <<<= 7
+    slli    t0, t3, 7           # ROL(7): parte alta
+    srli    t1, t3, 25          # ROL(7): parte baja (32-7=25)
+    or      t3, t0, t1          # ROL(7): fusionar
 
-    # Guardar resultados
+    # Escribir resultados de vuelta al estado
     add     t0, a0, a1
-    sw      t2, 0(t0)           # state[a] = t2
+    sw      t2, 0(t0)           # state[a] = resultado a
     add     t0, a0, a2
-    sw      t3, 0(t0)           # state[b] = t3
+    sw      t3, 0(t0)           # state[b] = resultado b
     add     t0, a0, a3
-    sw      t4, 0(t0)           # state[c] = t4
+    sw      t4, 0(t0)           # state[c] = resultado c
     add     t0, a0, a4
-    sw      t5, 0(t0)           # state[d] = t5
+    sw      t5, 0(t0)           # state[d] = resultado d
 
     ret
 
@@ -88,18 +88,18 @@ chacha20_quarter_round:
 .globl chacha20_inner_block
 .type  chacha20_inner_block, @function
 chacha20_inner_block:
-    addi    sp, sp, -16
-    sw      ra, 4(sp)
-    sw      s0, 0(sp)
-    mv      s0, a0              # s0 = state_ptr (preservar)
+    addi    sp, sp, -16         # reservar stack frame (16 bytes)
+    sw      ra, 4(sp)           # guardar return address
+    sw      s0, 0(sp)           # guardar s0 (callee-saved)
+    mv      s0, a0              # s0 = state_ptr (preservar entre llamadas)
 
     # -------------------------------------------------------------------------
-    # Column rounds
+    # Column rounds (mezcla vertical de la matriz 4x4)
     # -------------------------------------------------------------------------
-    
+
     # QUARTERROUND(0, 4, 8, 12) - columna 0
-    mv      a0, s0
-    li      a1, 0
+    mv      a0, s0              # restaurar puntero al estado
+    li      a1, 0               # índices de las posiciones
     li      a2, 4
     li      a3, 8
     li      a4, 12
@@ -130,12 +130,12 @@ chacha20_inner_block:
     call    chacha20_quarter_round
 
     # -------------------------------------------------------------------------
-    # Diagonal rounds
+    # Diagonal rounds (mezcla diagonal de la matriz 4x4)
     # -------------------------------------------------------------------------
-    
+
     # QUARTERROUND(0, 5, 10, 15) - diagonal 0
-    mv      a0, s0
-    li      a1, 0
+    mv      a0, s0              # preparar argumentos
+    li      a1, 0               # índices en patrón diagonal
     li      a2, 5
     li      a3, 10
     li      a4, 15
@@ -165,9 +165,9 @@ chacha20_inner_block:
     li      a4, 14
     call    chacha20_quarter_round
 
-    lw      s0, 0(sp)
-    lw      ra, 4(sp)
-    addi    sp, sp, 16
+    lw      s0, 0(sp)           # restaurar s0
+    lw      ra, 4(sp)           # restaurar return address
+    addi    sp, sp, 16          # liberar stack frame (balancea el -16)
     ret
 
 # =============================================================================
@@ -188,136 +188,122 @@ chacha20_inner_block:
 .globl chacha20_block
 .type  chacha20_block, @function
 chacha20_block:
-    # --- Prólogo ---
+    # --- Prólogo: stack de 176 bytes (64 working + 64 original + 48 saved regs) ---
     addi    sp, sp, -176
-    sw      ra, 172(sp)
+    sw      ra, 172(sp)         # guardar registros callee-saved
     sw      s0, 168(sp)
     sw      s1, 164(sp)
     sw      s2, 160(sp)
     sw      s3, 156(sp)
     sw      s4, 152(sp)
 
-    # Guardar parámetros en callee-saved
-    mv      s0, a0              # s0 = key
-    mv      s1, a1              # s1 = counter
-    mv      s2, a2              # s2 = nonce
-    mv      s3, a3              # s3 = output
+    # Preservar parámetros en registros permanentes
+    mv      s0, a0              # s0 = puntero key (256 bits)
+    mv      s1, a1              # s1 = counter (32 bits)
+    mv      s2, a2              # s2 = puntero nonce (96 bits)
+    mv      s3, a3              # s3 = puntero output (512 bits)
 
     # -------------------------------------------------------------------------
-    # PASO 1: state = constants | key | counter | nonce
+    # PASO 1: Inicializar estado (16 words = 64 bytes en sp+0..63)
     # -------------------------------------------------------------------------
-    # state[0..3] = "expand 32-byte k"
+    # state[0..3] = constantes mágicas "expand 32-byte k" (little-endian)
     li      t0, 0x61707865; sw t0, 0(sp)    # state[0] = "expa"
     li      t0, 0x3320646e; sw t0, 4(sp)    # state[1] = "nd 3"
     li      t0, 0x79622d32; sw t0, 8(sp)    # state[2] = "2-by"
     li      t0, 0x6b206574; sw t0, 12(sp)   # state[3] = "te k"
 
-    # state[4..11] = key (32 bytes = 8 words)
-    lw t0, 0(s0);  
-    sw t0, 16(sp)            # state[4]  = key[0..3]
+    # state[4..11] = key (256 bits = 8 words) - copiar desde memoria
+    lw t0, 0(s0);  sw t0, 16(sp)    # state[4]  = key[0..3]
+    lw t0, 4(s0);  sw t0, 20(sp)    # state[5]  = key[4..7]
+    lw t0, 8(s0);  sw t0, 24(sp)    # state[6]  = key[8..11]
+    lw t0, 12(s0); sw t0, 28(sp)    # state[7]  = key[12..15]
+    lw t0, 16(s0); sw t0, 32(sp)    # state[8]  = key[16..19]
+    lw t0, 20(s0); sw t0, 36(sp)    # state[9]  = key[20..23]
+    lw t0, 24(s0); sw t0, 40(sp)    # state[10] = key[24..27]
+    lw t0, 28(s0); sw t0, 44(sp)    # state[11] = key[28..31]
 
-    lw t0, 4(s0) 
-    sw t0, 20(sp)            # state[5]  = key[4..7]
-    
-    lw t0, 8(s0)  
-    sw t0, 24(sp)            # state[6]  = key[8..11]
-    
-    lw t0, 12(s0)
-    sw t0, 28(sp)            # state[7]  = key[12..15]
-   
-    lw t0, 16(s0)
-    sw t0, 32(sp)            # state[8]  = key[16..19]
-    
-    lw t0, 20(s0)
-    sw t0, 36(sp)            # state[9]  = key[20..23]
-   
-    lw t0, 24(s0)
-    sw t0, 40(sp)            # state[10] = key[24..27]
-   
-    lw t0, 28(s0)
-    sw t0, 44(sp)            # state[11] = key[28..31]
+    # state[12] = counter (32 bits) - incrementa por bloque
+    sw      s1, 48(sp)              # state[12] = counter
 
-    # state[12] = counter
-    sw      s1, 48(sp)                      # state[12] = counter
-
-    # state[13..15] = nonce (12 bytes = 3 words)
-    lw t0, 0(s2); sw t0, 52(sp)             # state[13] = nonce[0..3]
-    lw t0, 4(s2); sw t0, 56(sp)             # state[14] = nonce[4..7]
-    lw t0, 8(s2); sw t0, 60(sp)             # state[15] = nonce[8..11]
+    # state[13..15] = nonce (96 bits = 3 words) - único por mensaje
+    lw t0, 0(s2); sw t0, 52(sp)     # state[13] = nonce[0..3]
+    lw t0, 4(s2); sw t0, 56(sp)     # state[14] = nonce[4..7]
+    lw t0, 8(s2); sw t0, 60(sp)     # state[15] = nonce[8..11]
 
     # -------------------------------------------------------------------------
-    # PASO 2: working_state = state
+    # PASO 2: Clonar estado inicial (necesario para suma final)
     # -------------------------------------------------------------------------
-    # Copiar sp+0..63 → sp+64..127 (preservar state original)
-    li      t1, 0
+    # Copiar sp+0..63 → sp+64..127 (original se preserva)
+    li      t1, 0               # índice de byte
 .Lcopy_state:
-    add     t2, sp, t1
-    lw      t0, 0(t2)
-    sw      t0, 64(t2)          # state[i] = working_state[i]
-    addi    t1, t1, 4
+    add     t2, sp, t1          # dirección fuente
+    lw      t0, 0(t2)           # leer word del estado inicial
+    sw      t0, 64(t2)          # guardar en copia (sp+64..127)
+    addi    t1, t1, 4           # siguiente word
     li      t3, 64
-    blt     t1, t3, .Lcopy_state
+    blt     t1, t3, .Lcopy_state  # repetir hasta 64 bytes
 
     # -------------------------------------------------------------------------
-    # PASO 3: for i = 1 upto 10: inner_block(working_state)
+    # PASO 3: 10 double-rounds = 20 rounds (cada inner_block = 1 double-round)
     # -------------------------------------------------------------------------
-    li      s4, 10              # 10 iteraciones
+    li      s4, 10              # contador: 10 iteraciones
 .Linner_block_loop:
-    mv      a0, sp              # a0 = &working_state
-    call    chacha20_inner_block
-    addi    s4, s4, -1
-    bnez    s4, .Linner_block_loop
+    mv      a0, sp              # a0 = &working_state (sp+0..63)
+    call    chacha20_inner_block  # ejecutar 8 QRs (columnas+diagonales)
+    addi    s4, s4, -1          # decrementar contador
+    bnez    s4, .Linner_block_loop  # repetir si s4 != 0
 
     # -------------------------------------------------------------------------
-    # PASO 4: working_state += state
+    # PASO 4: Sumar estado original (previene ataques de reversión)
     # -------------------------------------------------------------------------
-    li      t3, 0
+    li      t3, 0               # índice de byte
 .Ladd_state:
-    add     t4, sp, t3
-    lw      t0, 0(t4)           # t0 = working_state[i]
-    lw      t1, 64(t4)          # t1 = state[i]
-    add     t0, t0, t1          # working_state[i] += state[i]
-    sw      t0, 0(t4)
+    add     t4, sp, t3          # dirección base
+    lw      t0, 0(t4)           # t0 = working_state[i] (post-rounds)
+    lw      t1, 64(t4)          # t1 = state[i] (original)
+    add     t0, t0, t1          # suma modular 32-bit
+    sw      t0, 0(t4)           # actualizar working_state[i]
     addi    t3, t3, 4
     li      t5, 64
     blt     t3, t5, .Ladd_state
 
     # -------------------------------------------------------------------------
-    # PASO 5: return serialize(working_state)
+    # PASO 5: Copiar keystream generado al buffer de salida
     # -------------------------------------------------------------------------
-    li      t3, 0
+    li      t3, 0               # índice de byte
 .Lserialize:
-    add     t4, sp, t3
-    lw      t0, 0(t4)           # t0 = working_state[i]
-    add     t5, s3, t3
-    sw      t0, 0(t5)           # output[i] = working_state[i]
+    add     t4, sp, t3          # &working_state[i]
+    lw      t0, 0(t4)           # leer word del keystream
+    add     t5, s3, t3          # &output[i]
+    sw      t0, 0(t5)           # escribir a memoria de salida
     addi    t3, t3, 4
     li      t5, 64
-    blt     t3, t5, .Lserialize
+    blt     t3, t5, .Lserialize   # copiar 64 bytes totales
 
-    # --- Epílogo ---
+    # --- Epílogo: restaurar registros y liberar stack ---
     lw      s4, 152(sp)
     lw      s3, 156(sp)
     lw      s2, 160(sp)
     lw      s1, 164(sp)
     lw      s0, 168(sp)
     lw      ra, 172(sp)
-    addi    sp, sp, 176
+    addi    sp, sp, 176         # liberar frame (balancea el -176)
     ret
 
 # =============================================================================
 # chacha20_encrypt
 # =============================================================================
-# Cifra (o descifra) un mensaje de longitud arbitraria.
+# Cifra/descifra mensaje de longitud arbitraria (operación simétrica: XOR).
 # RFC 8439, Sección 2.4:
 #   - Por cada bloque de 64 bytes: generar keystream con chacha20_block
-#   - XOR del keystream con el bloque de plaintext → ciphertext
+#   - XOR del keystream con plaintext/ciphertext → ciphertext/plaintext
+# Parámetros: a0=key, a1=counter, a2=nonce, a3=input, a4=output, a5=length
 # =============================================================================
 .globl chacha20_encrypt
 .type  chacha20_encrypt, @function
 chacha20_encrypt:
-    addi sp, sp, -96
-    sw   ra,  88(sp)
+    addi sp, sp, -96            # stack: 64 bytes keystream + registros salvados
+    sw   ra,  88(sp)            # guardar registros callee-saved
     sw   s0,  84(sp)
     sw   s1,  80(sp)
     sw   s2,  76(sp)
@@ -325,55 +311,56 @@ chacha20_encrypt:
     sw   s4,  68(sp)
     sw   s5,  64(sp)
 
-    mv   s0, a0             # s0 = puntero a key
-    mv   s1, a1             # s1 = contador actual
-    mv   s2, a2             # s2 = puntero a nonce
-    mv   s3, a3             # s3 = entrada (plaintext)
-    mv   s4, a4             # s4 = salida (ciphertext)
-    mv   s5, a5             # s5 = cantidad de bytes por cifrar
+    mv   s0, a0                 # s0 = puntero key (inmutable)
+    mv   s1, a1                 # s1 = counter (incrementa por bloque)
+    mv   s2, a2                 # s2 = puntero nonce (inmutable)
+    mv   s3, a3                 # s3 = puntero input (avanza)
+    mv   s4, a4                 # s4 = puntero output (avanza)
+    mv   s5, a5                 # s5 = bytes restantes (decrementa)
 
 .Lprocess_next_chunk:
-    beqz s5, .Lfinish_encrypt
+    beqz s5, .Lfinish_encrypt     # si no quedan bytes, terminar
 
-    # Construir bloque de keystream en el espacio local del stack
-    mv   a0, s0             # key
-    mv   a1, s1             # counter
-    mv   a2, s2             # nonce
-    addi a3, sp, 0          # destino del bloque generado
+    # Generar 64 bytes de keystream en sp+0..63
+    mv   a0, s0                   # key
+    mv   a1, s1                   # counter (valor actual)
+    mv   a2, s2                   # nonce
+    addi a3, sp, 0                # output = stack local
     call chacha20_block
 
-    # Se procesan hasta 64 bytes o lo que quede pendiente
-    li   t0, 0              # índice dentro del bloque
-    li   t1, 64             # tamaño máximo del bloque ChaCha20
+    # Procesar hasta 64 bytes o los que queden
+    li   t0, 0                    # índice: byte actual del bloque
+    li   t1, 64                   # límite: tamaño de bloque ChaCha20
 
 .Lbyte_mix_loop:
-    bgeu t0, s5, .Lend_byte_mix   # salir si ya no quedan bytes
-    bgeu t0, t1, .Lend_byte_mix   # salir si ya se procesaron 64 bytes
+    bgeu t0, s5, .Lend_byte_mix   # condición 1: procesados >= bytes_restantes
+    bgeu t0, t1, .Lend_byte_mix   # condición 2: procesados >= 64 (fin de bloque)
 
-    add  t2, s3, t0         # dirección de plaintext[i]
-    lbu  t3, 0(t2)          # cargar byte del mensaje
+    add  t2, s3, t0               # dirección input[i]
+    lbu  t3, 0(t2)                # leer byte de entrada
 
-    add  t2, sp, t0         # dirección de keystream[i]
-    lbu  t4, 0(t2)          # cargar byte del flujo de clave
+    add  t2, sp, t0               # dirección keystream[i]
+    lbu  t4, 0(t2)                # leer byte de keystream
 
-    xor  t3, t3, t4         # byte cifrado = mensaje XOR keystream
+    xor  t3, t3, t4               # XOR: cifrado o descifrado (simétrico)
 
-    add  t2, s4, t0         # dirección de ciphertext[i]
-    sb   t3, 0(t2)          # escribir resultado
+    add  t2, s4, t0               # dirección output[i]
+    sb   t3, 0(t2)                # escribir byte resultante
 
-    addi t0, t0, 1
+    addi t0, t0, 1                # siguiente byte
     j    .Lbyte_mix_loop
 
 .Lend_byte_mix:
-    # Mover punteros según los bytes ya transformados
-    add  s3, s3, t0         # avanzar entrada
-    add  s4, s4, t0         # avanzar salida
-    sub  s5, s5, t0         # descontar bytes ya cifrados
+    # Actualizar punteros y contadores para siguiente bloque
+    add  s3, s3, t0               # input += bytes_procesados
+    add  s4, s4, t0               # output += bytes_procesados
+    sub  s5, s5, t0               # length -= bytes_procesados
 
-    addi s1, s1, 1        # siguiente bloque => incrementar contador
-    j    .Lprocess_next_chunk
+    addi s1, s1, 1                # counter++ (RFC 8439: incremento por bloque)
+    j    .Lprocess_next_chunk     # procesar siguiente chunk
 
 .Lfinish_encrypt:
+    # Restaurar registros y retornar
     lw   s5,  64(sp)
     lw   s4,  68(sp)
     lw   s3,  72(sp)
@@ -381,6 +368,6 @@ chacha20_encrypt:
     lw   s1,  80(sp)
     lw   s0,  84(sp)
     lw   ra,  88(sp)
-    addi sp, sp, 96
+    addi sp, sp, 96               # liberar stack (balancea el -96)
     ret
 
