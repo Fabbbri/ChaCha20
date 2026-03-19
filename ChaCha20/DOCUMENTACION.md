@@ -459,7 +459,7 @@ addi s1, s1, 1
 El efecto fue que, a partir del segundo bloque, el contador tomaba valores completamente erróneos (1 → 11 → 21 → ...), lo que producía un keystream incorrecto y hacía fallar la prueba `ChaCha20 Encrypt (RFC 8439 2.4.2)` desde el byte 40 en adelante, como se observa en la siguiente captura:
 
 
-![Resultado de pruebas con FAIL en Encrypt](./EvidenciaGDB.png)
+![Resultado de pruebas con FAIL en Encrypt](./Evidencias/EvidenciaGDB.png)
 
 
 
@@ -498,7 +498,7 @@ end
 La salida de GDB confirmó el comportamiento incorrecto: el contador saltaba de `1` a `11` en la primera actualización, y de `11` a `21` en la segunda, en lugar de incrementarse de uno en uno:
 ```
 
-![Sesión GDB mostrando salto incorrecto del contador](./EvidenciaGDB1.png)
+![Sesión GDB mostrando salto incorrecto del contador](./Evidencias/EvidenciaGDB1.png)
 
 ---
 
@@ -519,6 +519,13 @@ Tras la corrección, la prueba de cifrado pasó satisfactoriamente, y los tres t
 
 
 ## 5. Análisis de Resultados
+
+
+![Sesión QEMU verificacion de resultados](./Evidencias/EvidenciaEjecucion.png)
+
+![Sesión GDB ANTES Y DESPUES](./Evidencias/EvidenciaAntesYDespues.png)
+
+![Sesión GDB Contador](./Evidencias/EvidenciaContador.png)
 
 
 ---
