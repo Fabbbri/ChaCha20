@@ -10,26 +10,76 @@ Proyecto individual para implementar el cifrador ChaCha20 en ensamblador RISC-V,
 
 ```
 .
-├── Dockerfile              # Imagen Docker con toolchain RISC-V y QEMU
-├── run.sh                  # Script para construir imagen y ejecutar contenedor
-├── README.md               # Este archivo
-└── ChaCha20/               # Código fuente del proyecto
-    ├── main.c              # Programa principal en C con tests RFC 8439
-    ├── chacha20.s          # Implementación ChaCha20 en ensamblador RISC-V
-    ├── startup.s           # Código de inicio (configura pila y llama main)
-    ├── linker.ld           # Script de enlazado (define memoria y entrada)
-    ├── build.sh            # Script de compilación
-    ├── run-qemu.sh         # Ejecuta QEMU con servidor GDB
-    ├── debug_test.gdb      # Comandos de depuración para GDB
-    └── README.md           # Documentación adicional
+├── Dockerfile                      # Imagen Docker con toolchain RISC-V y QEMU
+├── run.sh                          # Script para construir imagen y ejecutar contenedor
+├── README.md                       # Documentación principal del proyecto
+│
+└── ChaCha20/                       # Directorio del código fuente
+    │
+    ├── main.c                      # Programa principal en C con tests RFC 8439
+    ├── chacha20.s                  # Implementación ChaCha20 en ensamblador RISC-V
+    ├── startup.s                   # Código de inicio (configuración de pila y entrada)
+    ├── linker.ld                   # Script de enlazado (mapeo de memoria)
+    ├── build.sh                    # Script de compilación (genera chacha20.elf)
+    ├── run-qemu.sh                 # Script para ejecutar QEMU con servidor GDB
+    ├── debug_test.gdb              # Comandos GDB para depuración automatizada
+    ├── DOCUMENTACION.md            # Documentación técnica detallada
+    └── Evidencias/                 # Capturas de pruebas y depuración
+        ├── EvidenciaEjecucion.png  # Tests pasando (PASS)
+        ├── EvidenciaGDB.png        # Bug de cifrado detectado (FAIL)
+        └── EvidenciaGDB1.png       # Sesión GDB mostrando contador incorrecto
 ```
 
-**Descripción de archivos:**
-- `ChaCha20/` contiene la solución completa del proyecto
-- `Dockerfile` define la imagen Ubuntu 22.04 con el emulador QEMU y el toolchain RISC-V (`gcc-riscv64-unknown-elf`, `gdb-multiarch`)
-- `run.sh` automatiza la construcción de la imagen y la ejecución del contenedor
+### Descripción de Componentes
 
----
+#### Infraestructura Docker
+- **`Dockerfile`**: Define imagen Ubuntu 22.04 con:
+  - Toolchain RISC-V: `gcc-riscv64-unknown-elf`
+  - Emulador: `qemu-system-riscv32`
+  - Depurador: `gdb-multiarch`
+- **`run.sh`**: Automatiza construcción de imagen y montaje del workspace
+
+#### Código Fuente (`ChaCha20/`)
+- **`main.c`**: Capa de orquestación en C
+  - Implementa 3 tests del RFC 8439 (Quarter Round, Block, Encrypt)
+  - Proporciona funciones de I/O UART (`print_*`)
+  - Define vectores de prueba estáticos
+
+- **`chacha20.s`**: Implementación completa en ensamblador RISC-V
+  - `chacha20_quarter_round`: operación primitiva (4 palabras)
+  - `chacha20_inner_block`: coordina 8 QRs por double-round
+  - `chacha20_block`: genera 64 bytes de keystream (10 double-rounds)
+  - `chacha20_encrypt`: cifrado/descifrado de longitud arbitraria
+
+- **`startup.s`**: Código de bootstrap
+  - Inicializa stack pointer (`sp`) al top de RAM
+  - Invoca función `main()` desde C
+  - Define punto de entrada `_start`
+
+- **`linker.ld`**: Script de enlazado
+  - Mapea sección `.text` en `0x80000000` (RAM de QEMU virt)
+  - Define regiones de memoria (ROM, RAM, heap, stack)
+  - Exporta símbolos para startup (`__stack_top`, `__bss_start`, etc.)
+
+#### Scripts de Construcción y Ejecución
+- **`build.sh`**: Pipeline de compilación
+  ```bash
+  # 1. Compila startup.s → startup.o
+  # 2. Compila main.c → main.o
+  # 3. Ensambla chacha20.s → chacha20.o
+  # 4. Enlaza todo → chacha20.elf
+  ```
+
+- **`run-qemu.sh`**: Lanza QEMU en modo servidor GDB
+  ```bash
+  # qemu-system-riscv32 -machine virt -nographic \
+  #   -bios none -kernel chacha20.elf -s -S
+  ```
+
+- **`debug_test.gdb`**: Script de depuración con breakpoints configurados
+  - Breakpoints en funciones clave (`main`, `chacha20_block`, etc.)
+  - Comandos para inspeccionar estado y registros
+
 
 ## 2. Requisitos previos
 
@@ -53,6 +103,7 @@ cd ~/Escritorio/ChaCha20    # o la ubicación del proyecto
 
 ### Paso 2: Construir la imagen Docker y entrar al contenedor
 ```bash
+chmod +x run.sh
 ./run.sh
 ```
 
