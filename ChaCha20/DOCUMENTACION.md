@@ -95,7 +95,7 @@ El proyecto implementa una arquitectura de **dos capas** con una frontera semán
 
 ### 1.2 Interfaces Definidas
 
-Las funciones exportadas desde `chacha20.s` constituyen la única superficie de contacto entre ambas capas. Su contrato ABI (Application Binary Interface) RISC-V ILP32 es el siguiente:
+Las funciones exportadas desde `chacha20.s` constituyen la única superficie de contacto entre ambas capas. Su contrato ABI (Application Binary Interface) es el siguiente:
 
 #### `chacha20_quarter_round` — primitiva criptográfica
 
@@ -403,7 +403,7 @@ Stack frame (96 bytes):
 En este apartado se presenta evidencia del código en funcionamiento, validado
 contra los vectores de prueba del RFC 8439.
 
----
+
 
 ### 3.1 Salida de QEMU — Vectores de prueba
 
