@@ -204,7 +204,7 @@ chacha20_block:
     mv      s3, a3              # s3 = output
 
     # -------------------------------------------------------------------------
-    # PASO 1: state = constants | key | counter | nonce
+    # PASO 1: inicializar working_state = constants | key | counter | nonce
     # -------------------------------------------------------------------------
     # state[0..3] = "expand 32-byte k"
     li      t0, 0x61707865; sw t0, 0(sp)    # state[0] = "expa"
@@ -246,16 +246,16 @@ chacha20_block:
     lw t0, 8(s2); sw t0, 60(sp)             # state[15] = nonce[8..11]
 
     # -------------------------------------------------------------------------
-    # PASO 2: working_state = state
+    # PASO 2: guardar copia del estado original en sp+64..127
     # -------------------------------------------------------------------------
     # Copiar sp+0..63 → sp+64..127 (preservar state original)
-    li      t1, 0
+    li      t1, 0               # t1 = offset, empieza en 0
 .Lcopy_state:
-    add     t2, sp, t1
-    lw      t0, 0(t2)
+    add     t2, sp, t1          # t2 = sp + offset  (dirección fuente)
+    lw      t0, 0(t2)           # t0 = memoria[sp + offset]
     sw      t0, 64(t2)          # state[i] = working_state[i]
-    addi    t1, t1, 4
-    li      t3, 64
+    addi    t1, t1, 4           # offset += 4  (siguiente palabra)
+    li      t3, 64              
     blt     t1, t3, .Lcopy_state
 
     # -------------------------------------------------------------------------
@@ -267,33 +267,36 @@ chacha20_block:
     call    chacha20_inner_block
     addi    s4, s4, -1
     bnez    s4, .Linner_block_loop
-
+    
     # -------------------------------------------------------------------------
-    # PASO 4: working_state += state
+    # PASO 4: working_state[i] += state[i]  (i = 0..15)
+    # sp+0..63  = working_state (modificado por PASO 3)
+    # sp+64..127 = state original (copia inmutable del PASO 2)
     # -------------------------------------------------------------------------
-    li      t3, 0
+    li      t3, 0               # t3 = offset, empieza en 0
 .Ladd_state:
-    add     t4, sp, t3
-    lw      t0, 0(t4)           # t0 = working_state[i]
-    lw      t1, 64(t4)          # t1 = state[i]
-    add     t0, t0, t1          # working_state[i] += state[i]
-    sw      t0, 0(t4)
-    addi    t3, t3, 4
-    li      t5, 64
-    blt     t3, t5, .Ladd_state
+    add     t4, sp, t3          # t4 = sp + offset
+    lw      t0, 0(t4)           # t0 = working_state[i]  (sp+0..63)
+    lw      t1, 64(t4)          # t1 = state[i]          (sp+64..127)
+    add     t0, t0, t1          # t0 = working_state[i] + state[i]
+    sw      t0, 0(t4)           # working_state[i] = t0  (sp+0..63)
+    addi    t3, t3, 4           # offset += 4 (siguiente palabra)
+    li      t5, 64              # t5 = 64 (límite: 16 palabras × 4 bytes)
+    blt     t3, t5, .Ladd_state # si offset < 64, repetir
 
     # -------------------------------------------------------------------------
-    # PASO 5: return serialize(working_state)
+    # PASO 5: serialize(working_state) → output
+    # Copia sp+0..63 (working_state) al buffer de salida (s3)
     # -------------------------------------------------------------------------
-    li      t3, 0
+    li      t3, 0                   # t3 = offset, empieza en 0
 .Lserialize:
-    add     t4, sp, t3
-    lw      t0, 0(t4)           # t0 = working_state[i]
-    add     t5, s3, t3
-    sw      t0, 0(t5)           # output[i] = working_state[i]
-    addi    t3, t3, 4
-    li      t5, 64
-    blt     t3, t5, .Lserialize
+    add     t4, sp, t3              # t4 = sp + offset         (dirección fuente)
+    lw      t0, 0(t4)               # t0 = working_state[i]    (sp+0..63)
+    add     t5, s3, t3              # t5 = output + offset     (dirección destino)
+    sw      t0, 0(t5)               # output[i] = working_state[i]
+    addi    t3, t3, 4               # offset += 4 (siguiente palabra)
+    li      t5, 64                  # t5 = 64 (límite: 16 palabras × 4 bytes)
+    blt     t3, t5, .Lserialize    # si offset < 64, repetir
 
     # --- Epílogo ---
     lw      s4, 152(sp)

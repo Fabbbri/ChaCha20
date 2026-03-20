@@ -17,45 +17,46 @@
 El proyecto implementa una arquitectura de **dos capas** con una frontera semántica claramente definida:
 
 **Capa C (`main.c`):** Responsable de orquestación, verificación y comunicación.
-- Implementa tests del RFC 8439 (Quarter Round RQ 2.1.1, Block A.1, Encrypt A.2)
-- Proporciona E/S a través de UART (funciones `print_char()`, `print_string()`, `print_hex_*()`)
-- Mantiene vectores de prueba estáticos (constantes definidas en el RFC)
-- Coordina llamadas a las funciones ensamblador y verifica resultados
+- Implementa tests del RFC 8439 (Quarter Round 2.1.1, ejemplos de seccion A.1 y A.2)
+- Proporciona E/S a través de UART (funciones `print_char()`, `print_string()`, `print_hex_*()`).
+- Mantiene vectores de prueba estáticos (constantes definidas en RFC).
+- Coordina llamadas a las funciones ensamblador y verifica resultados.
 
 **Capa Ensamblador (`chacha20.s`):** Responsable de toda la lógica criptográfica.
-- Implementa las tres funciones exportadas: `chacha20_quarter_round`, `chacha20_inner_block` (interna), `chacha20_block`, `chacha20_encrypt`
-- Acceso directo a registros y memoria para máximo rendimiento
-- Control a nivel de instrucción: rotaciones, desplazamientos bit a bit, actualizaciones atómicas del estado
-- Gestión manual del stack para minimizar overhead de stack frames
+- Implementa las tres funciones exportadas: `chacha20_quarter_round`, `chacha20_inner_block` (interna), `chacha20_block`, `chacha20_encrypt`.
+- Acceso directo a registros y memoria para máximo rendimiento.
+- Control a nivel de instrucción: rotaciones, desplazamientos bit a bit, actualizaciones atómicas del estado.
+- Gestión manual del stack.
 
 ```
+┌────────────────────────────────────────────┐
+│              CAPA C  (main.c)              │
+│                                            │
+│  ┌──────────────────┐  ┌────────────────┐  │
+│  │  Tests RFC 8439  │  │ I/O UART       │  │
+│  │  · QR 2.1.1      │  │ print_char()   │  │
+│  │  · Block A.1     │  │ print_string() │  │
+│  │  · Encrypt A.2   │  │ print_hex_*()  │  │
+│  └──────────────────┘  └────────────────┘  │
+│                                            │
+│      Responsabilidad: orquestación,        │
+│             verificación, I/               │
+└────────────────────────────────────────────┘
+                  │  ABI RISC-V ILP32
+                  │  (argumentos en a0–a5,
+                  │   resultado en a0)
+                  ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                      CAPA C  (main.c)                            │
-│                                                                  │
-│  ┌──────────────────┐  ┌────────────────┐  ┌──────────────────┐  │
-│  │  Tests RFC 8439  │  │ I/O UART       │  │ Vectores de      │  │
-│  │  · QR 2.1.1      │  │ print_char()   │  │ prueba (A.1/A.2) │  │
-│  │  · Block A.1     │  │ print_string() │  │ arrays estáticos │  │
-│  │  · Encrypt A.2   │  │ print_hex_*()  │  │ const uint8_t[]  │  │
-│  └──────────────────┘  └────────────────┘  └──────────────────┘  │
-│                                                                  │
-│       Responsabilidad: orquestación, verificación, I/O           │
-└──────────────────────────────────┬───────────────────────────────┘
-                                   │  ABI RISC-V ILP32
-                                   │  (argumentos en a0–a5,
-                                   │   resultado en a0)
-                                   ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                 CAPA ENSAMBLADOR  (chacha20.s)                    │
+│                 CAPA ENSAMBLADOR  (chacha20.s)                   │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────┐    │
 │  │  chacha20_quarter_round  (.globl, llamable desde C)      │    │
 │  │  · Recibe: state_ptr (a0), 4 índices (a1–a4)             │    │
 │  │  · Opera sobre 4 palabras de estado en registros t2–t5   │    │
-│  │  · Sin prologue/epilogue propio (sin llamadas internas)   │    │
+│  │  · Sin prologue/epilogue propio (sin llamadas internas)  │    │
 │  └──────────────────────────────────────────────────────────┘    │
 │  ┌──────────────────────────────────────────────────────────┐    │
-│  │  chacha20_inner_block  (helper interno, .globl)          │    │
+│  │  chacha20_inner_block  (helper interno)                  │    │
 │  │  · Ejecuta las 8 QRs de un double-round (columnas +      │    │
 │  │    diagonales) llamando a chacha20_quarter_round         │    │
 │  │  · Preserva state_ptr en s0 entre cada una de las 8      │    │
@@ -94,7 +95,7 @@ El proyecto implementa una arquitectura de **dos capas** con una frontera semán
 
 ### 1.2 Interfaces Definidas
 
-Las funciones exportadas desde `chacha20.s` constituyen la única superficie de contacto entre ambas capas. Su contrato ABI (Application Binary Interface) RISC-V ILP32 es el siguiente:
+Las funciones exportadas desde `chacha20.s` constituyen la única superficie de contacto entre ambas capas. Su contrato ABI (Application Binary Interface) es el siguiente:
 
 #### `chacha20_quarter_round` — primitiva criptográfica
 
@@ -151,13 +152,12 @@ extern void chacha20_encrypt(const uint32_t *key, uint32_t counter,
 
 | Decisión | Justificación | Impacto |
 |----------|---------------|--------|
-| **`chacha20_quarter_round` como función separada** | Permite reutilización sin duplicar código para las 4 rondas de columna y las 4 rondas diagonal de cada double-round (80 invocaciones/bloque). | Corrección crítica: el QR es la operación atómica más pequeña; aislarla facilita verificación y auditoría. |
+| **`chacha20_quarter_round` como función separada** | Permite reutilización sin duplicar código para las 4 rondas de columna y las 4 rondas diagonal de cada double-round. | El QR es la operación atómica más pequeña; aislarla facilita verificación. |
 | **`chacha20_inner_block` como auxiliar interno** | Agrupa las 8 llamadas a `chacha20_quarter_round` de un double-round. El bucle de 10 iteraciones en `chacha20_block` queda reducido a simples cargas/branches. | Legibilidad: el pseudocódigo del RFC y el ensamblador muestran paralelismo claro. |
-| **Rotaciones mediante `slli`/`srli` + `or`** | RV32IM no dispone de instrucción `rol`/`ror`. La secuencia de 3 instrucciones es la forma estándar en este ISA. | Portabilidad: funciona en cualquier RV32IM sin extensiones. |
-| **Estado de 64 bytes en el stack, no en registros** | RV32IM tiene 32 registros; el estado ocupa 16 de ellos solo en datos. Almacenarlo en stack (acceso `lw`/`sw`) permite mantener dos copias (working + original) para suma final. | Simplicidad: evita reasignaciones de registros y reutilización compleja. |
+| **Rotaciones mediante `slli`/`srli` + `or`** | RV no dispone de instrucción `rol`/`ror`. La secuencia de 3 instrucciones es la forma estándar en este ISA. | Portabilidad: funciona en cualquier RV32IM sin extensiones. |
+| **Estado de 64 bytes en el stack, no en registros** | RV tiene 32 registros; el estado ocupa 16 de ellos solo en datos. Almacenarlo en stack (acceso `lw`/`sw`) permite mantener dos copias (working + original) para suma final. | Simplicidad: evita reasignaciones de registros y reutilización compleja. |
 | **Registros `s0`–`s5` (callee-saved) para parámetros vivos** | Las llamadas a funciones destruyen `a0`–`a5` y `t0`–`t6`. Los valores que deben sobrevivir (key, nonce, contador de iteraciones) se trasladan a `s`-registers. | Garantía ABI: el caller confía que los `s`-registers se preserven; el callee también. |
 | **Registros `t2`–`t5` en `chacha20_quarter_round`** | Esta función no llama a nadie, así que no hay riesgo de que `call` destruya sus valores. El uso de `t`-registers evita prologue/epilogue innecesarios. | Rendimiento: se ejecuta 80 veces/bloque; ahorrar 2-3 instrucciones por ejecución suma. |
-| **Tests y vectores RFC en C** | El código de verificación, E/S UART y arrays de constantes son más legibles en C; además, no son rutas críticas de rendimiento. | Mantenimiento: cambios futuros en tests son triviales; en ensamblador serían propensos a errores. |
 
 ---
 
@@ -184,11 +184,11 @@ El estado es una matriz 4×4 de palabras de 32 bits, con la siguiente asignació
     └───────────┴───────────┴───────────┴───────────┘
 ```
 
-**Almacenamiento:** Este estado de 64 bytes **vive en el stack** durante toda la ejecución. No cabe entero en registros (RV32I tiene 32 registros de 32 bits; si 16 se usan para datos del estado, restan 16 para punteros, índices, temporales y valores ABI—es insuficiente). El acceso por `lw`/`sw` desde el stack es la solución práctica.
+**Almacenamiento:** Este estado de 64 bytes **vive en el stack** durante toda la ejecución. No cabe entero en registros (RV tiene 32 registros de 32 bits; si 16 se usan para datos del estado, restan 16 para punteros, índices, temporales y valores ABI—es insuficiente). El acceso por `lw`/`sw` desde el stack es la solución práctica.
 
 ### 2.2 Mapeo en `chacha20_quarter_round`
 
-El quarter round es la primitiva más pequeña: recibe **índices** (no punteros a palabras) y opera sobre las palabras seleccionadas cargándolas en registros temporales:
+El quarter round es la función más pequeña: recibe **índices** (no punteros a palabras) y opera sobre las palabras seleccionadas cargándolas en registros temporales:
 
 ```
 Firma de llamada: chacha20_quarter_round(state_ptr, idx_a, idx_b, idx_c, idx_d)
@@ -200,7 +200,7 @@ Argumentos:
   a3 ──► idx_c (índice)  →  slli a3,a3,2  →  offset_c = idx_c × 4
   a4 ──► idx_d (índice)  →  slli a4,a4,2  →  offset_d = idx_d × 4
 
-Carga de palabras en registros de trabajo:
+Carga de palabras en registros temporales:
   t2  ←  state[idx_a]  (palabra "a")  ← lw t2, 0(a0 + offset_a)
   t3  ←  state[idx_b]  (palabra "b")  ← lw t3, 0(a0 + offset_b)
   t4  ←  state[idx_c]  (palabra "c")  ← lw t4, 0(a0 + offset_c)
@@ -224,9 +224,9 @@ Escritura de resultados:
 
 **¿Por qué `t2`–`t5` y no registros callee-saved (`s`)?**
 - `chacha20_quarter_round` **no llama a ninguna otra función**, así que nunca hay peligro de que un `call` destruya sus registros.
-- Los registros `t` (caller-saved) no requieren salvado/restauración en prologue/epilogue.
-- Ventaja de rendimiento: se ejecuta **80 veces por bloque** (10 iteraciones × 8 Quarter Rounds); ahorrar prologue/epilogue innecesarios suma decenas de ciclos.
-- Los registros `s` quedarían "desperdiciados" obligando a generar código de salvar/restaurar en cada invocación.
+- Los registros `t` (caller-saved) no requieren guardado/restauración en prologo/epilogo.
+- Ventaja de rendimiento: se ejecuta **80 veces por bloque** (10 iteraciones × 8 Quarter Rounds); ahorrar prologo/epilogo innecesarios suma decenas de ciclos.
+
 
 ### 2.3 Mapeo en `chacha20_inner_block`
 
@@ -238,21 +238,21 @@ Stack frame (16 bytes reservados):
   sp + 4   ← ra   (salvado)
   sp + 8..15 ← sin usar (pero reservados para alineación)
 
-Prologue:
+Prologo:
   addi    sp, sp, -16     # reservar 16 bytes
-  sw      s0, 0(sp)       # guardar s0 (callee-saved)
   sw      ra, 4(sp)       # guardar ra (return address)
-  mv      s0, a0          # s0 = estado_ptr (preservar entre calls)
+  sw      s0, 0(sp)       # guardar s0 (callee-saved)
+  mv      s0, a0          # s0 = state_ptr (preservar entre calls)
 
 Cuerpo (8 Quarter Rounds): por cada uno:
-  mv  a0, s0             # restaurar estado_ptr antes del call
+  mv  a0, s0             # restaurar state_ptr antes del call
   li  a1, idx_a          # cargar índices...
   li  a2, idx_b
   li  a3, idx_c
   li  a4, idx_d
   call chacha20_quarter_round
 
-Epilogue:
+Epilogo:
   lw      s0, 0(sp)      # restaurar s0
   lw      ra, 4(sp)      # restaurar ra
   addi    sp, sp, 16     # deshacer reserva (balancear prologue)
@@ -262,7 +262,6 @@ Epilogue:
 **¿Por qué `s0` en `inner_block`?**
 - `s0` es callee-saved: su valor se preserva automáticamente según ABI (el caller confía en esto).
 - Los parámetros (`a0..a4`) son destruidos por cada `call`, así que necesitamos un almacenamiento seguro para el puntero.
-- `t`-registers no funcionan: `chacha20_quarter_round` podría modificarlos (aunque aquí no lo hace, confiar en ello violaría encapsulación).
 
 ### 2.4 Mapeo en `chacha20_block`
 
@@ -273,74 +272,73 @@ Stack frame (176 bytes):
 ┌──────────────────────────────────────────────────────────┐
 │  Offset (bytes desde sp)                                 │
 ├──────────────────────────────────────────────────────────┤
-│  0–63    │  working_state[0..15]  (4 bytes × 16)        │
-│  64–127  │  original_state[0..15] (copia para suma)    │
-│  128–151 │  sin usar (espacio de holgura)               │
-│  152     │  s4  (guardado, contador iteraciones)        │
-│  156     │  s3  (guardado, output ptr)                  │
-│  160     │  s2  (guardado, nonce ptr)                   │
-│  164     │  s1  (guardado, counter value)               │
-│  168     │  s0  (guardado, key ptr)                     │
-│  172     │  ra  (return address)                        │
+│  0–63    │  working_state[0..15]  (4 bytes × 16)         │
+│  64–127  │  original_state[0..15] (copia para suma)      │
+│  128–151 │  sin usar (espacio de holgura)                │
+│  152     │  s4  (guardado, contador iteraciones)         │
+│  156     │  s3  (guardado, output ptr)                   │
+│  160     │  s2  (guardado, nonce ptr)                    │
+│  164     │  s1  (guardado, counter value)                │
+│  168     │  s0  (guardado, key ptr)                      │
+│  172     │  ra  (return address)                         │
 └──────────────────────────────────────────────────────────┘
 ```
 
 Asignación de registros callee-saved durante la vida de la función:
 
-| Registro | Valor almacenado | Palabras del estado | Por qué callee-saved |
+| Registro | Valor almacenado | Palabras del estado | Por qué |
 |----------|------------------|-------------------|----------------------|
 | `s0` | Puntero a `key` (32 bytes) | state[4..11] | Necesario en PASO 1 para construir; `call inner_block` lo destruiría. |
-| `s1` | `counter` (valor de 32 bits) | state[12] | Valor original que se escribe en sp+48; se incrementa en `chacha20_encrypt`. |
+| `s1` | `counter` (valor de 32 bits) | state[12] | Valor recibido como argumento a1; se escribe en sp+48 como state[12]. No se modifica dentro de chacha20_block. |
 | `s2` | Puntero a `nonce` (12 bytes) | state[13..15] | Necesario en PASO 1; `call inner_block` lo destruiría. |
 | `s3` | Puntero al `output` (buffer destino) | (no es parte del estado) | Usado solo en PASO 5 (serialización); debe preservarse. |
 | `s4` | Contador de iteraciones (10 → 0) | (no es parte del estado) | Decrementado en loop `.Linner_block_loop`; perdería su valor con `call` si fuera `t`-register. |
 
 **PASO 1 — Construcción del estado en sp+0..sp+63:**
 
-```
-Estado = [Constantes] | [Clave] | [Contador] | [Nonce]
+    Estado = [Constantes] | [Clave] | [Contador] | [Nonce]
 
-sp +  0..12  ← 0x61707865, 0x3320646e, 0x79622d32, 0x6b206574  (constantes RFC)
-sp + 16..44  ← key[0..7]  cargada desde (s0)
-sp + 48      ← counter value (s1) escribido como state[12]
-sp + 52..60  ← nonce[0..2] cargada desde (s2)
-```
+    sp +  0..15  ← 0x61707865, 0x3320646e, 0x79622d32, 0x6b206574  (constantes RFC, state[0..3])
+    sp + 16..47  ← key[0..31]  — 8 palabras cargadas desde (s0)     (state[4..11])
+    sp + 48      ← counter                                           (state[12])
+    sp + 52..60  ← nonce[0..11] — 3 palabras cargadas desde (s2)    (state[13..15])
 
-Cada palabra se trae desde memoria con `lw` (la clave y el nonce desde sus punteros) o se carga literal (`li` para constantes), y se escriben al stack con `sw`.
+Cada palabra se trae desde memoria con `lw` (la clave y el nonce desde sus punteros)
+o se carga literal (`li` para constantes), y se escriben al stack con `sw`.
 
 **PASO 2 — Preservar estado inicial (sp+64..127):**
 
-Bucle que copia sp+0..63 → sp+64..127. Esta copia se necesita porque PASO 3 modifica sp+0..63; PASO 4 requiere la versión sin modificar.
+Bucle que copia sp+0..63 → sp+64..127. A partir de aquí:
+- sp+0..63  = working_state (será modificado en PASO 3)
+- sp+64..127 = state original (copia inmutable para PASO 4)
 
 **PASO 3 — Loop de 10 double-rounds:**
 
-```
-li      s4, 10              # iteraciones
-.Linner_block_loop:
-  mv    a0, sp              # paso estado (working_state) como argumento
-  call  chacha20_inner_block
-  addi  s4, s4, -1
-  bnez  s4, .Linner_block_loop
-```
+    li      s4, 10
+    .Linner_block_loop:
+      mv    a0, sp              # pasa working_state (sp+0..63) como argumento
+      call  chacha20_inner_block
+      addi  s4, s4, -1
+      bnez  s4, .Linner_block_loop
 
 Cada llamada ejecuta una secuencia de 8 Quarter Rounds (4 columnas + 4 diagonales).
+working_state en sp+0..63 queda modificado al final de las 10 rondas.
 
 **PASO 4 — Suma de estados:**
 
-```
-working_state[i] += original_state[i]   (para i = 0..15)
-```
+    working_state[i] += state[i]   (para i = 0..15)
+    sp+0..63[i]      += sp+64..127[i]
 
-Este paso es mandatorio en el RFC: el estado se modifica por los QRs, pero el resultado final se obtiene sumando la copia inmutable. Esto es parte de la construcción de keystream.
+El resultado se acumula en sp+0..63 (working_state). La copia en sp+64..127
+permanece intacta.
 
 **PASO 5 — Serialización:**
 
-```
-output[0..63] = working_state[0..15]    (escrito como 64 bytes, little-endian)
-```
+    output[0..63] = working_state[0..15]    (64 bytes, little-endian)
 
-El resultado se serializa al buffer `output` (pasado como s3). Cada palabra de 32 bits se escribe con `sw`.
-
+Bucle que copia sp+0..63 (working_state, en el stack) hacia el buffer
+de salida apuntado por s3 (pasado como a3 por el llamador).
+Cada palabra de 32 bits se escribe con `sw`.
 ### 2.5 Mapeo en `chacha20_encrypt`
 
 `chacha20_encrypt` mantiene el contexto de cifrado en un **loop sobre bloques** de 64 bytes. Necesita 6 valores vivos a través de cada `call chacha20_block`:
@@ -357,7 +355,7 @@ Stack frame (96 bytes):
   sp + 88      ← ra (return address)
 ```
 
-| Registro | Valor | Parámetro ABI | Por qué |
+| Registro | Valor almacenado | Parámetro ABI | Por qué |
 |----------|-------|---------------|--------|
 | `s0` | Puntero a `key` (no cambia) | `a0` (salida) | Reutilizado en cada `call chacha20_block`. |
 | `s1` | **Contador actual** (se incrementa) | `a1` (entrada) | Parámetro de cada `call`; se recarga en `a1` antes de llamar. |
@@ -366,7 +364,7 @@ Stack frame (96 bytes):
 | `s4` | Puntero en **ciphertext** (avanza +bytes_procesados) | `a4` (salida) | Se actualiza al final de cada iteración: `add s4, s4, t0`. |
 | `s5` | Bytes **restantes** por cifrar (decrece) | `a5` (entrada) | Se actualiza al final de cada iteración: `sub s5, s5, t0`. |
 
-**Loop principal:**
+**Loop principal (Pseudocodigo):**
 
 ```
 .Lprocess_next_chunk:
@@ -397,48 +395,41 @@ Stack frame (96 bytes):
 
 **Ventaja:** El almacenamiento de 64 bytes de keystream en el stack de `chacha20_encrypt` es **temporal**; se sobrescribe en cada iteración. No requiere preservación entre bloques.
 
-### 2.6 Operación de Rotación (sin instrucción nativa)
 
-RISC-V RV32IM no tiene instrucción de rotación (`rol`, `ror`). Se implementa con desplazamientos combinados:
 
-```asm
-# Rotación izquierda de x en n bits: x <<<= n
-# Resultado: (x << n) | (x >> (32 - n))
+---
+## 3. Evidencias de Ejecución
 
-slli    t0, x, n         # t0 = x << n
-srli    t1, x, (32 - n)  # t1 = x >> (32 - n)
-or      x, t0, t1        # x = t0 | t1
-```
+En este apartado se presenta evidencia del código en funcionamiento, validado
+contra los vectores de prueba del RFC 8439.
 
-**Instancias en `chacha20_quarter_round`:**
 
-```asm
-# d <<<= 16
-slli    t0, t5, 16
-srli    t1, t5, 16
-or      t5, t0, t1
 
-# b <<<= 12
-slli    t0, t3, 12
-srli    t1, t3, 20       # 32 - 12 = 20
-or      t3, t0, t1
+### 3.1 Salida de QEMU — Vectores de prueba
 
-# d <<<= 8
-slli    t0, t5, 8
-srli    t1, t5, 24       # 32 - 8 = 24
-or      t5, t0, t1
+Ejecución de `main.c` con los vectores de prueba del RFC. La salida muestra
+los resultados del Quarter Round, el bloque y el cifrado comparados contra los valores esperados.
 
-# b <<<= 7
-slli    t0, t3, 7
-srli    t1, t3, 25       # 32 - 7 = 25
-or      t3, t0, t1
-```
-
-Los registros `t0` y `t1` se reutilizan en cada rotación (sus valores son descartables tras el `or`).
+![Sesión QEMU — verificación de resultados](./Evidencias/EvidenciaEjecucion.png)
+![Sesión QEMU — verificación de resultados](./Evidencias/EvidenciaEjecucion1.png)
 
 ---
 
-## 3. Evidencias de Ejecución
+### 3.2 Inspección GDB — Estado antes y después de las 20 rondas
+
+Capturado en GDB inmediatamente
+antes y después de las 20 rondas de `chacha20_inner_block`.
+
+![Sesión GDB — estado antes y después](./Evidencias/EvidenciaAntesYDespues.png)
+
+---
+
+### 3.3 Inspección GDB — Actualización del contador
+
+Seguimiento del registro `s1` (contador) a lo largo de las iteraciones de
+`chacha20_encrypt`, verificando que se incrementa correctamente entre bloques.
+
+![Sesión GDB — contador](./Evidencias/EvidenciaContador.png)
 
 
 ---
@@ -493,10 +484,10 @@ commands
     printf "[chacha20_encrypt] AFTER  update s1=0x%08x (%u)\n", $s1, $s1
     continue
 end
-` ``
+```
 
 La salida de GDB confirmó el comportamiento incorrecto: el contador saltaba de `1` a `11` en la primera actualización, y de `11` a `21` en la segunda, en lugar de incrementarse de uno en uno:
-```
+
 
 ![Sesión GDB mostrando salto incorrecto del contador](./Evidencias/EvidenciaGDB1.png)
 
@@ -520,13 +511,56 @@ Tras la corrección, la prueba de cifrado pasó satisfactoriamente, y los tres t
 
 ## 5. Análisis de Resultados
 
+### 5.1 Vectores de prueba RFC 8439
 
-![Sesión QEMU verificacion de resultados](./Evidencias/EvidenciaEjecucion.png)
+Se ejecutaron 10 pruebas contra los vectores oficiales del RFC 8439:
 
-![Sesión GDB ANTES Y DESPUES](./Evidencias/EvidenciaAntesYDespues.png)
+- **TEST 1** — Quarter Round (Sección 2.1.1): verificación de la operación
+  primitiva con los valores de referencia del RFC. PASS.
+- **TEST 2–6** — ChaCha20 Block TV #1–5: verificación del keystream generado
+  por `chacha20_block` para distintas combinaciones de clave, contador y nonce.
+  Todos PASS.
+- **TEST 7–9** — ChaCha20 Encryption TV #1–3: verificación del cifrado completo
+  con `chacha20_encrypt`. Todos PASS.
+- **TEST 10** — Encrypt+Decrypt con mensaje de 200 bytes (3 bloques completos +
+  8 bytes residuales): verifica el manejo correcto de mensajes multi-bloque y
+  del último bloque parcial. PASS.
 
-![Sesión GDB Contador](./Evidencias/EvidenciaContador.png)
+El TEST 10 es particularmente relevante: un mensaje de 200 bytes (3 bloques
+completos + 8 bytes residuales) verifica tanto el cifrado contra el RFC como
+la propiedad de simetría `decrypt(encrypt(P)) == P`, confirmando que el
+incremento del contador entre bloques y el manejo del bloque parcial final
+son correctos.
 
+### 5.2 Conclusión
+
+El desarrollo de esta implementación permitió consolidar el entendimiento de
+varios conceptos fundamentales que se interconectan en la práctica.
+
+A nivel de arquitectura RISC-V, se trabajó directamente con las convenciones
+de llamada ABI: el uso de registros caller-saved versus callee-saved, el
+manejo manual del stack frame en el prólogo y epílogo de cada función, y la
+disciplina de preservar registros a través de llamadas anidadas
+(`chacha20_block` llama a `chacha20_inner_block`, que a su vez llama a
+`chacha20_quarter_round`). La gestión explícita del stack también evidenció
+cómo el compilador y el programador en ensamblador toman decisiones distintas
+sobre dónde vivir los datos: en registros cuando es posible, en el stack cuando
+es necesario.
+
+A nivel algorítmico, implementar ChaCha20 desde las instrucciones primitivas
+reforzó la comprensión de por qué el algoritmo está diseñado como está: la
+separación entre estado de trabajo y estado original no es un detalle de
+implementación sino un requisito criptográfico; las rotaciones de bits (`<<<`)
+no tienen instrucción nativa en RISC-V y se construyen con dos shifts y un OR,
+lo que ilustra la diferencia entre una especificación algorítmica y su
+realización en hardware concreto.
+
+Finalmente, el uso de GDB sobre QEMU como entorno de verificación demostró
+ser una herramienta efectiva para razonar sobre el estado interno de un
+programa en bare-metal: inspeccionar memoria en direcciones relativas a `sp`,
+trazar el valor de registros entre instrucciones y validar intermedios contra
+valores del RFC construye una metodología de depuración que trasciende este
+proyecto en particular.
 
 ---
 
