@@ -1,6 +1,8 @@
-# Entorno de desarrollo RISC-V con QEMU y GDB
+# Proyecto Arquitectura de computadores I (CE4301)
 
-Este proyecto proporciona un entorno completo para desarrollo y depuración de programas bare-metal en arquitectura RISC-V de 32 bits, utilizando QEMU y GDB dentro de un contenedor Docker.
+## Descripción breve del proyecto:
+
+Proyecto individual para implementar el cifrador ChaCha20 en ensamblador RISC-V, integrándolo con un programa en C que lo use para cifrar y descifrar mensajes. En el entorno Docker + QEMU, permitiendo depuración con GDB.
 
 ---
 
@@ -8,104 +10,146 @@ Este proyecto proporciona un entorno completo para desarrollo y depuración de p
 
 ```
 .
-├── Dockerfile
-├── run.sh
-├── examples/           # Ejemplos de código
-│   ├── asm-only/      # Ejemplo de ensamblador puro
-│   │   ├── test.s
-│   │   ├── linker.ld
-│   │   ├── build.sh
-│   │   └── run-qemu.sh
-│   └── c-asm/         # Ejemplo de C + ensamblador
-│       ├── example.c
-│       ├── math_asm.s
-│       ├── linker.ld
-│       ├── build.sh
-│       └── run-qemu.sh
-└── README.md
+├── Dockerfile                      # Imagen Docker con toolchain RISC-V y QEMU
+├── run.sh                          # Script para construir imagen y ejecutar contenedor
+├── README.md                       # Documentación principal del proyecto
+│
+└── ChaCha20/                       # Directorio del código fuente
+    ├── main.c                      # Programa principal en C con tests RFC 8439
+    ├── chacha20.s                  # Implementación ChaCha20 en ensamblador RISC-V
+    ├── startup.s                   # Código de inicio (configuración de pila y entrada)
+    ├── linker.ld                   # Script de enlazado (mapeo de memoria)
+    ├── build.sh                    # Script de compilación (genera chacha20.elf)
+    ├── run-qemu.sh                 # Script para ejecutar QEMU con servidor GDB
+    ├── debug_test.gdb              # Comandos GDB para depuración automatizada
+    ├── contador.gdb                # Comandos GDB para depuración automatizada
+    ├── evidencias.gdb              # Comandos GDB para depuración automatizada
+    ├── DOCUMENTACION.md            # Documentación técnica detallada
+    └── Evidencias/                 # Capturas de pruebas y depuración
 ```
 
-- `examples/` contiene diferentes ejemplos de programas RISC-V
-- `Dockerfile` define la imagen que incluye el emulador QEMU y el toolchain RISC-V
-- `run.sh` automatiza la construcción de la imagen y la ejecución del contenedor
 
-## Ejemplos disponibles
 
-### Ensamblador puro (`examples/asm-only/`)
-Programa simple escrito completamente en ensamblador que calcula la suma del 1 al 10.
 
-### C + Ensamblador (`examples/c-asm/`)
-Programa en C que llama funciones escritas en ensamblador, demostrando la integración entre ambos lenguajes. Este ejemplo incluye un archivo de inicio (startup.s) que inicializa la pila y llama a la función main de C, ya que los programas C necesitan un entorno de ejecución básico antes de ejecutar el código principal.
+## 2. Requisitos previos
+
+- **Docker** instalado en el sistema
+- Permisos para ejecutar contenedores
+- Terminal con soporte bash
+
+**Verificar instalación:**
+```bash
+docker --version
+```
 
 ---
 
-## 2. Inicio rápido
+## 3. Instrucciones paso a paso para construir y ejecutar el proyecto dentro del entorno Docker
 
-### Paso 1: Construir el contenedor
+### Paso 1: Clonar o descargar el proyecto
+```bash
+cd ~/Escritorio/ChaCha20    # o la ubicación del proyecto
+```
+
+### Paso 2: Construir la imagen Docker y entrar al contenedor
 ```bash
 chmod +x run.sh
 ./run.sh
 ```
 
-### Paso 2: Elegir y compilar un ejemplo
-```bash
-# Para el ejemplo de ensamblador puro
-cd /home/rvqemu-dev/workspace/examples/asm-only
-./build.sh
 
-# Para el ejemplo de C + ensamblador
-cd /home/rvqemu-dev/workspace/examples/c-asm
+### Paso 3: Compilar el proyecto (dentro del contenedor)
+```bash
+cd ChaCha20
 ./build.sh
 ```
 
-### Paso 3: Ejecutar con QEMU y depurar
+Esto genera `chacha20.elf`, el ejecutable para RISC-V.
+
+### Paso 4: Ejecutar con QEMU
 ```bash
-# En una terminal: iniciar QEMU con servidor GDB
 ./run-qemu.sh
+```
 
-# En otra terminal: conectar GDB
+El programa inicia QEMU en modo pausa esperando conexión GDB en el puerto 1234.
+
+---
+
+## 4. Instrucciones para ejecutar los casos de prueba y verificar los vectores del RFC
+
+El programa `main.c` incluye pruebas automáticas basadas en los vectores de prueba del **RFC 8439**.
+
+
+
+### Ejecutar las pruebas:
+
+
+
+**Terminal 2:** Conectar con GDB y ejecutar
+```bash
+# Entrar al contenedor (si no está dentro)
 docker exec -it rvqemu /bin/bash
-cd /home/rvqemu-dev/workspace/examples/[ejemplo-elegido]
-gdb-multiarch [archivo-elf]
+
+# Navegar al directorio del proyecto
+cd ChaCha20
+
+# Conectar GDB
+gdb-multiarch chacha20.elf
 ```
 
----
-
-## 3. Uso detallado
-
-### Construcción del contenedor
-El script `run.sh` construye la imagen `rvqemu` y crea un contenedor interactivo que monta el directorio del proyecto en `/home/rvqemu-dev/workspace`.
-
-### Compilación
-Cada ejemplo incluye un script `build.sh` que maneja la compilación automáticamente.
-
-**Opciones de compilación utilizadas**:
-- `-march=rv32im`: arquitectura RISC-V 32 bits con extensiones I y M
-- `-mabi=ilp32`: ABI ILP32
-- `-nostdlib -ffreestanding`: entorno bare-metal
-- `-g`: información de depuración para GDB
-
-### Ejecución y depuración
-1. **QEMU**: `run-qemu.sh` inicia QEMU con servidor GDB en puerto 1234
-2. **GDB**: Conectar desde otra terminal para depuración interactiva
-
-**Comandos útiles de GDB**:
+Dentro de GDB:
 ```gdb
-target remote :1234    # Conectar al servidor GDB
-break _start           # Punto de ruptura al inicio
-continue               # Continuar ejecución
-layout asm             # Vista de ensamblador
-layout regs            # Vista de registros
-step                   # Ejecutar siguiente instrucción
-info registers         # Mostrar registros
-monitor quit           # Finalizar sesión
+target remote :1234
+continue
 ```
+
+La salida en la terminal de QEMU mostrará:
+- Los valores de salida calculados
+- Los valores esperados según RFC
+- Resultado: **PASS** o **FAIL**
 
 ---
 
-## 4. Detalles de los ejemplos
+## 5. Instrucciones para abrir una sesión de depuración con GDB
 
-Para información específica sobre cada ejemplo, consultar:
-- [`examples/asm-only/README.md`](examples/asm-only/README.md) - Ensamblador puro
-- [`examples/c-asm/README.md`](examples/c-asm/README.md) - C + Ensamblador
-- [`examples/README.md`](examples/README.md) - Información general
+### Opción A: Depuración manual
+
+**Terminal 1:** Iniciar QEMU con servidor GDB
+```bash
+cd ChaCha20
+./run-qemu.sh
+```
+
+**Terminal 2:** Conectar GDB
+```bash
+docker exec -it rvqemu /bin/bash
+cd  ChaCha20
+gdb-multiarch chacha20.elf
+target remote :1234              
+```
+
+Comandos básicos en GDB:
+```gdb
+break _start                     # Breakpoint en inicio
+break main                       # Breakpoint en main()
+break chacha20_quarter_round     # Breakpoint en función assembly
+continue                         # Ejecutar hasta breakpoint
+step                             # Avanzar una instrucción
+info registers                   # Ver registros
+x/16xw $a0                       # Ver estado (16 words en a0)
+layout asm                       # Vista de desensamblado
+layout regs                      # Vista de registros
+quit                             # Salir de GDB
+```
+
+### Opción B: Usando scripts de depuración
+
+```bash
+gdb-multiarch chacha20.elf -x debug_test.gdb
+```
+```bash
+gdb-multiarch chacha20.elf -x contador.gdb
+```
+```bash
+gdb-multiarch chacha20.elf -x evidencias.gdb
+```
